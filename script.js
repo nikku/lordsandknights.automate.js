@@ -279,6 +279,7 @@
             buildings[building.name] = {
               name: building.name, 
               level: +result[1], 
+              building: building, 
               upgradeCost: {
                 wood: +result[2], 
                 stone: +result[3], 
@@ -335,24 +336,24 @@
       }, 
       
       getNextBuildingUpgrade: function() {
-        var buildings = Intel.getBuildingsLevelInfo();
+        var buildingInfos = Intel.getBuildingsLevelInfo();
         var buildingToUpgrade = null;
         var upgradeIndex = 0;
         
-        if (!buildings) {
+        if (!buildingInfos) {
           return null;
         }
         
-        angular.forEach(buildings, function(building, i) {
+        angular.forEach(buildingInfos, function(buildingInfo, i) {
           
           var level = 1;
           angular.forEach(C.cityUpgrades, function(upgrade, j) {
-            if (upgrade == building.name && level <= building.level) {
+            if (upgrade.name == buildingInfo.name && level <= buildingInfo.level) {
               level++;
               
-              if (level == building.level + 1) {
+              if (level == buildingInfo.level + 1) {
                 if (!upgradeIndex || upgradeIndex > j) {
-                  buildingToUpgrade = building;
+                  buildingToUpgrade = buildingInfo.building;
                   upgradeIndex = j;
                 }
               }
@@ -360,7 +361,11 @@
           });
         });
         
-        return { building: buildingToUpgrade, index: upgradeIndex };
+        if (buildingToUpgrade) {
+          return { building: buildingToUpgrade, index: upgradeIndex };
+        } else {
+          return null;
+        }
       }
     };
     
@@ -537,7 +542,7 @@
         }
         
         console.log("[evolve] next upgrade is", nextUpgrade);
-        Intel.performUpgrade(nextUpgrade.building.name).then(function(success) {
+        Intel.performUpgrade(nextUpgrade.building).then(function(success) {
           console.log("[evolve] started upgrade?", success);
           action.repeatIn(1000 * 60 * 2); // two minutes
           deferred.resolve();
