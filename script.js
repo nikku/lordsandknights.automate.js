@@ -814,20 +814,9 @@
     $scope.technologies = C.technologies;
     
     $scope.cityUpgrades = C.cityUpgrades;
+    
     $scope.nextUpgrade = null;
     $scope.nextTechnologyUpgrade = null;
-    
-    if ($scope.cityUpgrades.length) {
-      if (!$scope.cityUpgrades[1].name) {
-        var upgrades = [];
-        
-        angular.forEach($scope.cityUpgrades, function(upgradeName) {
-          upgrades.push({ name: upgradeName, type: "building" });
-        })
-        
-        $scope.cityUpgrades = C.cityUpgrades = upgrades;
-      }
-    }
     
     $scope.elements = function() {
       return $scope.cityUpgrades;
