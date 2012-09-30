@@ -1,0 +1,21 @@
+{
+  "manifest_version": 2, 
+  "permissions": [
+    "http://*/*",
+    "https://*/*" 
+  ],
+   "content_scripts": [ {
+      "exclude_globs": [  ],
+      "exclude_matches": [  ],
+      "include_globs": [ ],
+      "js": [ "bootstrap.js" ], 
+      "matches": [ "http://browser.lordsandknights.com/*" ],
+      "run_at": "document_idle"
+   } ],
+   "converted_from_user_script": true,
+   "description": "",
+   "key": "kbfbPLlFIYVNjNWWzIUULV+s+SSbW3MTRODSsposSNc=",
+   "name": "automate.user.js",
+   "version": "1.0", 
+   "web_accessible_resources": [ "script.js", "q.js", "angular.js", "angular.ext.js", "style.css" ]
+}

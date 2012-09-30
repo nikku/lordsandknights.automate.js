@@ -1,0 +1,14 @@
+Prerequisites
+=============
+
+* Chrome Browser
+
+How to install
+==============
+
+* navigate to chrome://chrome/extensions/
+* check "developer mode"
+* click "load unpacked extension"
+* point to this directory
+
+* press f5 in browser game

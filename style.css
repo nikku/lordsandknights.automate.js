@@ -1,0 +1,101 @@
+#papyrusbg_top {
+  z-index: 11000;
+}
+
+#automate-controls, #automate-overlay {
+  position: fixed;
+  z-index: 160820;
+}
+
+#automate-overlay { 
+  background: #CCC;
+  opacity: 0.4;
+  width: 100%;
+  height: 100%;
+  top: 0px;
+  left: 0px;
+}
+
+#automate-overlay.in-action {
+  background: coral;
+}
+
+#automate-controls {
+  top: 10px;
+  left: 10px;
+}
+
+.control-box {
+  border-radius: 3px;
+  background: #FEFEFE;
+  
+  float: left;
+  
+  margin: 10px;
+  padding: 10px;
+}
+
+.control-box .box {
+  margin-top: 5px; 
+  padding-top: 5px; 
+  border-top: dotted 1px gray;
+}
+
+#automate-controls .status {
+  clear: both;
+}
+
+#automate-controls li {
+  display: block;
+  width: 100%;
+  height: 20px;
+  line-height: 20px;
+}
+
+#automate-controls li.marked {
+  background: lightblue;
+}
+
+#automate-controls li.next-upgrade {
+  border: dotted 2px gray;
+}
+
+#automate-controls li .technology {
+  border: dotted 2px gray;
+}
+
+#automate-controls ul {
+  margin-top: 10px;
+  overflow: auto;
+  max-height: 400px;
+  max-width: 300px;
+}
+
+button {
+  padding-right: 4px;
+  padding-left: 4px;
+  min-width: 12px;
+  
+  cursor: pointer;
+  border: solid 1px #BBB;
+  border-radius: 3px;
+  background: #DDD;
+}
+
+button:hover {
+  border-color: #CCC;
+  background: #EEE;
+}
+
+button.active { 
+  border-color: fuchsia;
+  background: fuchsia;
+}
+button.active:hover { 
+  border-color: fuchsia;
+  background: fuchsia;
+}
+
+.click-captured-city {
+  border: dotted 3px darkcyan;
+}
