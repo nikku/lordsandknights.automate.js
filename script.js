@@ -237,7 +237,7 @@
         {name: "Ore mine", type: "building"}, {name: "Wood store", type: "building"}, {name: "Stone store", type: "building"}, {name: "Ore store", type: "building"}, {name: "Lumberjack", type: "building"}, {name: "Quarry", type: "building"}, {name: "Fortifications", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Farm", type: "building"}, {name: "Keep", type: "building"}, {name: "Lumberjack", type: "building"}, {name: "Quarry", type: "building"}, {name: "Fortifications", type: "building"}, {name: "Ore mine", type: "building"}, 
         {name: "Lumberjack", type: "building"}, {name: "Keep", type: "building"}, {name: "Quarry", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Farm", type: "building"}, {name: "Fortifications", type: "building"}, {name: "Fortifications", type: "building"}, {name: "Lumberjack", type: "building"}, {name: "Quarry", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Wood store", type: "building"}, 
         {name: "Stone store", type: "building"}, {name: "Fortifications", type: "building"}, {name: "Ore store", type: "building"}, {name: "Farm", type: "building"}, {name: "Farm", type: "building"}, {name: "Farm", type: "building"}, {name: "Wood store", type: "building"}, {name: "Keep", type: "building"}, {name: "Stone store", type: "building"}, {name: "Keep", type: "building"}, {name: "Ore store", type: "building"}, {name: "Farm", type: "building"}, {name: "Wood store", type: "building"}, {name: "Stone store", type: "building"}, {name: "Ore store", type: "building"}, {name: "Farm", type: "building"}, {name: "Wood store", type: "building"}, {name: "Stone store", type: "building"}, {name: "Ore store", type: "building"}, {name: "Ore store", type: "building"}, {name: "Farm", type: "building"}, {name: "Lumberjack", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Quarry", type: "building"}, {name: "Keep", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Ore mine", type: "building"}], 
-      attackTargets: Storage.get("attackTargets") || [{"foreign":true,"name":"eigen6","id":"hab_63783","points":"13"},{"foreign":true,"name":"Free castle 65542","id":"hab_65542","points":"33"},{"foreign":true,"name":"Free castle 63782","id":"hab_63782","points":"34"},{"foreign":true,"name":"Free castle 64658","id":"hab_64658","points":"33"},{"foreign":true,"name":"Free castle 64660","id":"hab_64660","points":"32"},{"foreign":true,"name":"Free castle 65544","id":"hab_65544","points":"33"},{"foreign":true,"name":"Free castle 62043","id":"hab_62043","points":"34"},{"foreign":true,"name":"Kaida","id":"hab_62908","points":"13"},{"foreign":true,"name":"Free castle 62909","id":"hab_62909","points":"34"},{"foreign":true,"name":"Free castle 64656","id":"hab_64656","points":"33"},{"foreign":false,"name":"Gars Bu","id":"hab_63779","points":"200"},{"foreign":true,"name":"Bimbi","id":"hab_64657","points":"20"}]
+      attackTargets: Storage.get("attackTargets") || { "Gars Bu" : [{"foreign":true,"name":"Bimbi","id":"hab_64657","points":"20"},{"foreign":true,"name":"Mytho","id":"hab_62910","points":"15"},{"foreign":true,"name":"eigen6","id":"hab_63783","points":"13"},{"foreign":true,"name":"Free castle 65542","id":"hab_65542","points":"33"},{"foreign":true,"name":"Free castle 63782","id":"hab_63782","points":"34"},{"foreign":true,"name":"Free castle 64658","id":"hab_64658","points":"33"},{"foreign":true,"name":"Free castle 64660","id":"hab_64660","points":"32"},{"foreign":true,"name":"Bafur","id":"hab_64659","points":"17"},{"foreign":true,"name":"Free castle 63778","id":"hab_63778","points":"37"},{"foreign":true,"name":"eigen5","id":"hab_63779","points":"13"},{"foreign":true,"name":"Free castle 63784","id":"hab_63784","points":"37"},{"foreign":true,"name":"Free castle 65544","id":"hab_65544","points":"33"},{"foreign":true,"name":"Free castle 62043","id":"hab_62043","points":"34"},{"foreign":true,"name":"Kaida","id":"hab_62908","points":"13"},{"foreign":true,"name":"Free castle 64656","id":"hab_64656","points":"33"}] }
     };
     
     var Intel = window.Intel = {
@@ -487,8 +487,6 @@
           
           if (e.length) {
             i = e.length;
-            e.prop("checked", true);
-
             return U.click($("#btn_missions_start"));
           } else {
             return U.resolvedDefer();
@@ -756,7 +754,7 @@
       });
 
       function goNext() {
-        if ($("#btn_hab_name").text() == cityInView) {
+        if (Intel.getCurrentCityName() == cityInView) {
           return;
         }
         
@@ -782,9 +780,11 @@
     }).on("click", function() {
       var e = $(this);
       
-      $scope.$apply(function() {
-        $scope.updateLocation({ tab: e.attr("title") });
-      });
+      T.delay(function() {
+        $scope.$apply(function() {
+          $scope.updateLocation({ tab: e.attr("title") });
+        });
+      }, 500);
     });
     
     function registerUpdateLocation() {
@@ -792,7 +792,7 @@
       function updateLocation(event) {
         T.delay(function() {
           $scope.$apply(function() {
-            $scope.updateLocation({ city: $("#btn_hab_name").text() });
+            $scope.updateLocation({ city: Intel.getCurrentCityName() });
             $("#nextHabitat, #previousHabitat").click(updateLocation);
           });
         }, 1000);
@@ -933,55 +933,81 @@
   
   var AttackController = window.AttackController = function($scope) {
     
+    $scope.cities = [];
+    $scope.currentCity = Intel.getCurrentCityName();
+
     $scope.currentAttacks = null;
-    $scope.attackTargets = C.attackTargets;
-    $scope.currentCity = null;
-    
+    $scope.attackTargets = [];
+
     $scope.elements = function() {
       return $scope.attackTargets;
     };
-    
+
     function captureHabitatClick(event, city) {
       $scope.$apply(function() {
         $scope.attackTargets.push(city);
         $("#" + city.id).addClass("click-captured-city");
       });
     }
+
     $scope.$watch("currentLocation", function(newVal) {
       if (newVal && $scope.currentAttacks) {
         $scope.currentAttacks.onMapsPage = (newVal.tab == "map");
       }
     });
-    
+
+    $scope.$watch("currentCity", function(newValue) {
+      if (newValue) {
+        console.log("Change " + newValue);
+        if (!C.attackTargets[newValue]) {
+          C.attackTargets[newValue] = [];
+        }
+        
+        $scope.attackTargets = C.attackTargets[newValue];
+      }
+    });
+
+    $scope.$watch(function() { return $scope.currentLocation; }, function(newValue) {
+      if ((newValue || {}).tab == "building-list") {
+        var cities = [];
+        $(".nameDelimiter").each(function() {
+          cities.push($(this).text());
+        });
+        console.log(cities);
+        
+        $scope.cities = cities;
+      }
+    });
+
     $scope.$watch("shownComponents.controls", function(newVal, oldVal) {
       if (newVal) {
         $(document).off("click-habitat");
       }
     });
-    
+
     $scope.startCaptureTargets = function() {
       $(document).on("click-habitat", captureHabitatClick);
       $scope.hide("controls");
       $(".main .button[title=map]").click();
     };
-    
+
     $scope.clearTargets = function() {
-      $scope.attackTargets = [];
+      if ($scope.currentCity) {
+        $scope.attackTargets = C.attackTargets[$scope.currentCity] = [];
+      }
     };
-    
+
     $scope.removeTarget = function(index) {
       $scope.attackTargets.splice(index, 1);
     };
-    
+
     $scope.stopAttacks = function() {
       $scope.actions.unschedule($scope.currentAttacks.action());
       $scope.currentAttacks = null;
-      
-      console.log($scope.actions);
     };
-    
+
     $scope.attackCapturedTargets = function() {
-      $scope.currentAttacks = new AttackCastleBuilder($scope, $scope.attackTargets);
+      $scope.currentAttacks = new AttackCastleBuilder($scope, $scope.attackTargets, $scope.currentCity);
       $scope.actions.schedule($scope.currentAttacks.action(), 1000);
     };
   };
@@ -1051,8 +1077,8 @@
           </div>\
           <div class="attack-upgrades control-box" ng-show="shown(\'attack\')">\
             <div ng-controller="AttackController">\
-              <h3>Attack</h3>\
-              <div>\
+              <h3>Attacks for <select ng-model="currentCity" ng-options="city for city in cities"></select></h3>\
+              <div style="margin-top: 10px">\
                 <button ng-click="startCaptureTargets()">capture</button>\
                 <button ng-click="clearTargets()">clear</button>\
                 <button ng-hide="currentAttacks.inProgress" ng-click="attackCapturedTargets()">attack selected ({{attackTargets.length}})</button>\
