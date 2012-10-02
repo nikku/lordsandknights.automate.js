@@ -237,7 +237,8 @@
         {name: "Ore mine", type: "building"}, {name: "Wood store", type: "building"}, {name: "Stone store", type: "building"}, {name: "Ore store", type: "building"}, {name: "Lumberjack", type: "building"}, {name: "Quarry", type: "building"}, {name: "Fortifications", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Farm", type: "building"}, {name: "Keep", type: "building"}, {name: "Lumberjack", type: "building"}, {name: "Quarry", type: "building"}, {name: "Fortifications", type: "building"}, {name: "Ore mine", type: "building"}, 
         {name: "Lumberjack", type: "building"}, {name: "Keep", type: "building"}, {name: "Quarry", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Farm", type: "building"}, {name: "Fortifications", type: "building"}, {name: "Fortifications", type: "building"}, {name: "Lumberjack", type: "building"}, {name: "Quarry", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Wood store", type: "building"}, 
         {name: "Stone store", type: "building"}, {name: "Fortifications", type: "building"}, {name: "Ore store", type: "building"}, {name: "Farm", type: "building"}, {name: "Farm", type: "building"}, {name: "Farm", type: "building"}, {name: "Wood store", type: "building"}, {name: "Keep", type: "building"}, {name: "Stone store", type: "building"}, {name: "Keep", type: "building"}, {name: "Ore store", type: "building"}, {name: "Farm", type: "building"}, {name: "Wood store", type: "building"}, {name: "Stone store", type: "building"}, {name: "Ore store", type: "building"}, {name: "Farm", type: "building"}, {name: "Wood store", type: "building"}, {name: "Stone store", type: "building"}, {name: "Ore store", type: "building"}, {name: "Ore store", type: "building"}, {name: "Farm", type: "building"}, {name: "Lumberjack", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Quarry", type: "building"}, {name: "Keep", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Ore mine", type: "building"}], 
-      attackTargets: Storage.get("attackTargets") || { "Gars Bu" : [{"foreign":true,"name":"Bimbi","id":"hab_64657","points":"20"},{"foreign":true,"name":"Mytho","id":"hab_62910","points":"15"},{"foreign":true,"name":"eigen6","id":"hab_63783","points":"13"},{"foreign":true,"name":"Free castle 65542","id":"hab_65542","points":"33"},{"foreign":true,"name":"Free castle 63782","id":"hab_63782","points":"34"},{"foreign":true,"name":"Free castle 64658","id":"hab_64658","points":"33"},{"foreign":true,"name":"Free castle 64660","id":"hab_64660","points":"32"},{"foreign":true,"name":"Bafur","id":"hab_64659","points":"17"},{"foreign":true,"name":"Free castle 63778","id":"hab_63778","points":"37"},{"foreign":true,"name":"eigen5","id":"hab_63779","points":"13"},{"foreign":true,"name":"Free castle 63784","id":"hab_63784","points":"37"},{"foreign":true,"name":"Free castle 65544","id":"hab_65544","points":"33"},{"foreign":true,"name":"Free castle 62043","id":"hab_62043","points":"34"},{"foreign":true,"name":"Kaida","id":"hab_62908","points":"13"},{"foreign":true,"name":"Free castle 64656","id":"hab_64656","points":"33"}] }
+      attackTargets: Storage.get("attackTargets") || { "Gars Bu" : [{"foreign":true,"name":"Bimbi","id":"hab_64657","points":"20"},{"foreign":true,"name":"Mytho","id":"hab_62910","points":"15"},{"foreign":true,"name":"eigen6","id":"hab_63783","points":"13"},{"foreign":true,"name":"Free castle 65542","id":"hab_65542","points":"33"},{"foreign":true,"name":"Free castle 63782","id":"hab_63782","points":"34"},{"foreign":true,"name":"Free castle 64658","id":"hab_64658","points":"33"},{"foreign":true,"name":"Free castle 64660","id":"hab_64660","points":"32"},{"foreign":true,"name":"Bafur","id":"hab_64659","points":"17"},{"foreign":true,"name":"Free castle 63778","id":"hab_63778","points":"37"},{"foreign":true,"name":"eigen5","id":"hab_63779","points":"13"},{"foreign":true,"name":"Free castle 63784","id":"hab_63784","points":"37"},{"foreign":true,"name":"Free castle 65544","id":"hab_65544","points":"33"},{"foreign":true,"name":"Free castle 62043","id":"hab_62043","points":"34"},{"foreign":true,"name":"Kaida","id":"hab_62908","points":"13"},{"foreign":true,"name":"Free castle 64656","id":"hab_64656","points":"33"}] }, 
+      attackComposition: [ 6, 6, 6, 6, 6, 15]
     };
     
     var Intel = window.Intel = {
@@ -464,6 +465,12 @@
   }
 
   function performMissions(action) {
+    var viewMission = $(".closeViewMission");
+    if (viewMission.length) {
+      // Close view mission (what ever it is)
+      viewMission.click();
+    }
+    
     return U.click(".main .button[title=castle]")
       .then(function() {
         return U.click("#habitatView a.tavern");
@@ -584,7 +591,7 @@
       };
 
       if (attackedCastles.length < castlesToAttack.length) {
-        var gotoMapsPage = (self.onMapsPage ? U.resolvedDefer() : U.click(".main .button[title=map]").then(function() { return U.wait(4000); }));
+        var gotoMapsPage = (self.onMapsPage ? U.click("#mapCloseButtonContainer") : U.click(".main .button[title=map]").then(function() { return U.wait(4000); }));
         var currentCastle = castlesToAttack[0];
 
         console.log("[attack]", (castlesToAttack.length - attackedCastles.length), " attacks left. Next target is ", currentCastle);
@@ -600,16 +607,19 @@
           }
         }).then(function() {
 
+          var attackComposition = C.attackComposition;
+          
           var totalUnitCount = 0;
           var attackUnits = [];
 
           var attackElements = $(".mapMaxButton:not(#silverMax):not(#unitMax7):not(#unitMax6)");
-
+          var i = 0;
+          
           attackElements.each(function() {
             var e = $(this);
-
+            var currentUnitMax = attackComposition[i++];
             var available = +e.siblings(".unitsInputCount").text();
-            var toBeSent = Math.floor(Math.min(Math.max(8, 8), available));
+            var toBeSent = Math.floor(Math.min(currentUnitMax, available));
 
             attackUnits.push(toBeSent);
             totalUnitCount += toBeSent;
