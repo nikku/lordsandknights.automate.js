@@ -99,3 +99,9 @@ button.active:hover {
 .click-captured-city {
   border: dotted 3px darkcyan;
 }
+
+.attack-composition-field {
+  width: 18px;
+  margin-left: 3px;
+  text-align: right;
+}
