@@ -247,11 +247,8 @@
     };
     
     var Intel = window.Intel = {
-      getCurrentCityName: function() {
-        return $("#btn_hab_name").text();
-      }, 
       getBaseForCurrentCity: function() {
-        var currentCity = Intel.getCurrentCityName();
+        var currentCity = Navigation.currentCityName();
         var base = null;
         
         $(".nameDelimiter").each(function() {
@@ -460,6 +457,47 @@
         return deferred.promise;
       }
     };
+    
+    var Navigation = window.Navigation = {
+      currentCityName: function() {
+        return $("#btn_hab_name").text();
+      }, 
+      
+      navigateTo: function(city, tab) {
+        var deferred = Q.defer(), 
+            targetCity = city.replace(/-/g, " ");
+
+        // already in the selected city
+        if (Navigation.currentCityName() == targetCity) {
+          return U.resolvedDefer();
+        }
+
+        U.click(".main .button[title='no.-of-castles']")
+         .then(function() {
+           var cities = $(".habitatName"), 
+               targetCityLink = null;
+
+           cities.each(function() {
+             if ($(this).text() == targetCity) {
+               targetCityLink = $(this);
+             }
+           });
+
+           if (!targetCityLink) {
+             throw new Error("Target city " + targetCity + " not found");
+           }
+
+           return U.click(targetCityLink);
+         })
+         .then(function() {
+           return U.click(".main .button[title=" + tab + "]");
+         }).then(function() {
+           return deferred.resolve(true);
+         });
+
+        return deferred.promise;
+      }
+    }
   })();
 
   function parseTimeMs(text) {
@@ -470,14 +508,11 @@
   }
 
   function performMissions(action) {
-    var viewMission = $(".closeViewMission");
-    if (viewMission.length) {
-      // Close view mission (what ever it is)
-      viewMission.click();
-    }
-    
     return U.click(".main .button[title=castle]")
       .then(function() {
+        // Close view mission (what ever it is)
+        $(".closeViewMission").click();
+        
         return U.click("#habitatView a.tavern");
       })
       .then(function() {
@@ -597,7 +632,12 @@
       };
 
       if (attackedCastles.length < castlesToAttack.length) {
-        var gotoMapsPage = (self.onMapsPage ? U.click("#mapCloseButtonContainer") : U.click(".main .button[title=map]").then(function() { return U.wait(4000); }));
+        
+        if (self.onMapsPage) {
+          $("#mapCloseButtonContainer").click();
+        }
+        
+        var gotoMapsPage = (self.onMapsPage ? U.resolvedDefer() : U.click(".main .button[title=map]").then(function() { return U.wait(4000); }));
         var currentCastle = castlesToAttack[0];
 
         console.log("[attack]", (castlesToAttack.length - attackedCastles.length), " attacks left. Next target is ", currentCastle);
@@ -733,62 +773,36 @@
     $scope.inAction = function() {
       return !!actions.currentAction;
     };
-    
+
     $scope.enable = function() {
       actions.schedule(performMissions, 2000);
       actions.schedule(evolveCastel, 4000);
       // actions.schedule(tradeResources, 10000);
       actions.enable();
     };
-    
+
     $scope.disable = function() {
       actions.disable();
       actions.purge();
     };
-    
+
     $scope.updateLocation = function(data) {
-      
+
       if (data.city) {
         data.city = data.city.replace(/ /g, "-");
       }
-      
+
       $scope.currentLocation = { city: (data.city || $routeParams.city), tab: (data.tab || $routeParams.tab) };
-      
+
       $location.path("/" + $scope.currentLocation.city + "/" + $scope.currentLocation.tab);
     }
-    
-    $scope.navigateTo = function(city, tab) {
-      var nextCityButton = $("#nextHabitat"), 
-          cityInView = city.replace(/-/g, " ");
-      
-      T.delay(function() {
-        $(".main .button[title=" + tab + "]").click();
-        goNext();
-      });
 
-      function goNext() {
-        if (Intel.getCurrentCityName() == cityInView) {
-          return;
-        }
-        
-        var nextCityButton = $("#nextHabitat");
-        if (nextCityButton.is(".disabled")) {
-          return;
-        } else {
-          nextCityButton.click();
-          T.delay(function() {
-            goNext();
-          }, 1000);
-        }
-      }
-    };
-    
     // ::::::::::::::: page initialization :::::::::::::::::::
-    
+
     $(".main .button").each(function() {
       var e = $(this),
           title = e.attr("title").toLowerCase().replace(/ /g, "-");
-      
+
       e.attr("title", title);
     }).on("click", function() {
       var e = $(this);
@@ -799,26 +813,81 @@
         });
       }, 500);
     });
-    
-    function registerUpdateLocation() {
 
-      function updateLocation(event) {
-        T.delay(function() {
-          $scope.$apply(function() {
-            $scope.updateLocation({ city: Intel.getCurrentCityName() });
-            $("#nextHabitat, #previousHabitat").click(updateLocation);
-          });
-        }, 1000);
-      };
+    function updateLocation(event) {
+      T.delay(function() {
+        $scope.$apply(function() {
+          $scope.updateLocation({ city: Navigation.currentCityName() });
+        });
+      }, 1000);
+    };
+    
+    function SendResourcesAdapter() {
       
-      $("#nextHabitat, #previousHabitat").click(updateLocation);
+    };
+    
+    SendResourcesAdapter.prototype = {
+      constants: {
+        transportCapacity: {
+          6: 500, 
+          7: 2500
+        }
+      }, 
+      
+      getCurrentTransportCapacityWithout: function(excludedId) {
+        var capacity = $(".mapMaxButton").filter
+      }, 
+      
+      addAllResources: function(resourceId) {
+        var neededCapacity = 
+          this.getCurrentTransportCapacityWithout(resourceId) + 
+          this.getMaxCapacity(resourceId);
+        
+        this.ensureTransportCapacity(neededCapacity);
+      }, 
+      
+      ensureTransportCapacity: function(capacity) {
+        var transportCapacity = SendResourcesAdapter.constants.transportCapacity, 
+            handCapacity = transportCapacity[6], 
+            oxCapacity = transportCapacity[7], 
+            
+            oxRequired = capacity % oxCapacity, 
+            handWithOxRequired = (capacity - (oxRequired * oxCapacity)) % handCapacity, 
+            handOnlyRequired = (capacity % handCapacity);
+            
+         
+      }
+    };
+    
+    function adjustTransportAndInputMax(event) {
+      var e = $(this);
+
+      var regexp = /(unitMax|resourceMax)([\\d]+)/m;
+      var result = regexp.exec(e.attr("id"));
+
+      if (!result || result[1] == "unitMax") {
+        return;
+      }
+
+      var resourceId = parseInt(result[2]);
+
+      var helper = new SendResourcesAdapter();
+      helper.addAllResources(resourceId);
+    };
+
+    function registerEventHandlers() {
+      $(document).on("click", "#nextHabitat", updateLocation);
+      $(document).on("click", "#previousHabitat", updateLocation);
+      $(document).on("click", ".castle_list", updateLocation);
+      
+//      $(document).on("mousedown", ".mapMaxButton", adjustTransportAndInputMax);
       
       $scope.$apply(function() {
-        $scope.navigateTo($routeParams.city, $routeParams.tab);
+        Navigation.navigateTo($routeParams.city, $routeParams.tab);
       });
     }
     
-    T.delay(registerUpdateLocation, 1000);
+    T.delay(registerEventHandlers, 1000);
   };
   
   var BuildingUpgradesController = window.BuildingUpgradesController = function($scope, $location, $routeParams) {
@@ -868,6 +937,113 @@
         $scope.nextUpgrade = Intel.getNextBuildingUpgrade();
       }
     });
+  };
+
+  var AttackController = window.AttackController = function($scope) {
+
+    $scope.cities = [];
+    $scope.currentCity = null;
+
+    $scope.farmConfiguration = C.farmConfiguration;
+
+    $scope.currentAttacks = null;
+
+    $scope.attackTargets = null;
+    $scope.attackComposition = null;
+
+    $scope.editAttackComposition = false;
+    
+    $scope.toggleEditAttackComposition = function() {
+      $scope.editAttackComposition = !$scope.editAttackComposition;
+    };
+
+    $scope.elements = function() {
+      return $scope.attackTargets;
+    };
+
+    function captureHabitatClick(event, city) {
+      $scope.$apply(function() {
+        $scope.attackTargets.push(city);
+        $("#" + city.id).addClass("click-captured-city");
+      });
+    }
+
+    $scope.$watch("currentLocation", function(newVal) {
+      if (newVal && $scope.currentAttacks) {
+        $scope.currentAttacks.onMapsPage = (newVal.tab == "map");
+      }
+      
+      $scope.currentCity = Navigation.currentCityName();
+      
+      if ($scope.cities.indexOf($scope.currentCity)) {
+        $scope.cities.push($scope.currentCity);
+      }
+    });
+
+    $scope.$watch("currentCity", function(newValue) {
+      if (newValue) {
+        if (!$scope.farmConfiguration[newValue]) {
+          $scope.farmConfiguration[newValue] = { attackComposition: C.defaults.attackComposition, targets: [] };
+        }
+        
+        $scope.attackTargets = $scope.farmConfiguration[newValue].targets;
+        $scope.attackComposition = $scope.farmConfiguration[newValue].attackComposition;
+      }
+    });
+
+    $scope.$watch(function() { return $scope.currentLocation; }, function(newValue) {
+      if ((newValue || {}).tab == "building-list") {
+        var cities = [];
+        $(".nameDelimiter").each(function() {
+          cities.push($(this).text());
+        });
+        $scope.cities = cities;
+      }
+    });
+
+    $scope.$watch("shownComponents.controls", function(newVal, oldVal) {
+      if (newVal) {
+        $(document).off("click-habitat");
+      }
+    });
+
+    $scope.startCaptureTargets = function() {
+      $(document).on("click-habitat", captureHabitatClick);
+      $scope.hide("controls");
+      $(".main .button[title=map]").click();
+    };
+
+    $scope.clearTargets = function() {
+      if ($scope.currentCity) {
+        $scope.attackTargets = $scope.farmConfiguration[$scope.currentCity].targets = [];
+      }
+    };
+
+    $scope.removeTarget = function(index) {
+      $scope.attackTargets.splice(index, 1);
+    };
+
+    $scope.stopAttacks = function() {
+      $scope.actions.unschedule($scope.currentAttacks.action());
+      $scope.currentAttacks = null;
+    };
+
+    $scope.attackCapturedTargets = function() {
+      $scope.currentAttacks = new AttackCastleBuilder($scope, $scope.attackTargets, $scope.attackComposition, $scope.currentCity);
+      $scope.actions.schedule($scope.currentAttacks.action(), 1000);
+    };
+  };
+
+  var OptionsController = window.OptionsController = function($scope) {
+    
+    $scope.$watch("currentCity", function(newValue) {
+      console.log(newValue);
+    });
+    
+    $scope.save = function() {
+      Storage.put("farmConfiguration", angular.copy(C.farmConfiguration));
+      Storage.put("cityUpgrades", angular.copy(C.cityUpgrades));
+    };
   };
 
   var EditableListController = window.EditableListController = function($scope) {
@@ -944,106 +1120,6 @@
     };
   };
 
-  var AttackController = window.AttackController = function($scope) {
-
-    $scope.cities = [];
-    $scope.currentCity = null;
-
-    $scope.farmConfiguration = C.farmConfiguration;
-
-    $scope.currentAttacks = null;
-
-    $scope.attackTargets = null;
-    $scope.attackComposition = null;
-
-    $scope.elements = function() {
-      return $scope.attackTargets;
-    };
-
-    function captureHabitatClick(event, city) {
-      $scope.$apply(function() {
-        $scope.attackTargets.push(city);
-        $("#" + city.id).addClass("click-captured-city");
-      });
-    }
-
-    $scope.$watch("currentLocation", function(newVal) {
-      if (newVal && $scope.currentAttacks) {
-        $scope.currentAttacks.onMapsPage = (newVal.tab == "map");
-      }
-      
-      $scope.currentCity = Intel.getCurrentCityName();
-      if ($scope.cities.indexOf($scope.currentCity)) {
-        $scope.cities.push($scope.currentCity);
-      }
-    });
-
-    $scope.$watch("currentCity", function(newValue) {
-      if (newValue) {
-        if (!$scope.farmConfiguration[newValue]) {
-          $scope.farmConfiguration[newValue] = { attackComposition: C.defaults.attackComposition, targets: [] };
-        }
-        
-        $scope.attackTargets = $scope.farmConfiguration[newValue].targets;
-        $scope.attackComposition = $scope.farmConfiguration[newValue].attackComposition;
-      }
-    });
-
-    $scope.$watch(function() { return $scope.currentLocation; }, function(newValue) {
-      if ((newValue || {}).tab == "building-list") {
-        var cities = [];
-        $(".nameDelimiter").each(function() {
-          cities.push($(this).text());
-        });
-        $scope.cities = cities;
-      }
-    });
-
-    $scope.$watch("shownComponents.controls", function(newVal, oldVal) {
-      if (newVal) {
-        $(document).off("click-habitat");
-      }
-    });
-
-    $scope.startCaptureTargets = function() {
-      $(document).on("click-habitat", captureHabitatClick);
-      $scope.hide("controls");
-      $(".main .button[title=map]").click();
-    };
-
-    $scope.clearTargets = function() {
-      if ($scope.currentCity) {
-        $scope.attackTargets = $scope.farmConfiguration[$scope.currentCity].targets = [];
-      }
-    };
-
-    $scope.removeTarget = function(index) {
-      $scope.attackTargets.splice(index, 1);
-    };
-
-    $scope.stopAttacks = function() {
-      $scope.actions.unschedule($scope.currentAttacks.action());
-      $scope.currentAttacks = null;
-    };
-
-    $scope.attackCapturedTargets = function() {
-      $scope.currentAttacks = new AttackCastleBuilder($scope, $scope.attackTargets, $scope.attackComposition, $scope.currentCity);
-      $scope.actions.schedule($scope.currentAttacks.action(), 1000);
-    };
-  };
-
-  var OptionsController = window.OptionsController = function($scope) {
-    
-    $scope.$watch("currentCity", function(newValue) {
-      console.log(newValue);
-    });
-    
-    $scope.save = function() {
-      Storage.put("farmConfiguration", angular.copy(C.farmConfiguration));
-      Storage.put("cityUpgrades", angular.copy(C.cityUpgrades));
-    };
-  };
-
   var content = $('<div ng-app>\
       <div ng-controller="AutomateController">\
         <div id="automate-overlay" ng-class="inActionCls()" ng-show="shown(\'controls\') || inAction()"></div>\
@@ -1108,9 +1184,17 @@
                 <button ng-hide="currentAttacks.inProgress" ng-click="attackCapturedTargets()">attack selected ({{attackTargets.length}})</button>\
                 <button ng-show="currentAttacks.inProgress" ng-click="stopAttacks()" class="active">attacked ({{currentAttacks.doneCount}}/{{attackTargets.length}})</button>\
               </div>\
-              <div>\
-                composition: \
-                <input ng-repeat="c in attackComposition" ng-model="attackComposition[$index]" class="attack-composition-field" />\
+              <div style="margin-top: 10px">\
+                comp \
+                <span ng-switch on="editAttackComposition">\
+                  <span ng-switch-when="true">\
+                    <input ng-repeat="c in attackComposition" ng-model="attackComposition[$index]" class="attack-composition-field" />\
+                  </span>\
+                  <span ng-switch-when="false">\
+                    <span ng-repeat="c in attackComposition">{{c}} </span>\
+                  </span>\
+                </span>\
+                <button ng-click="toggleEditAttackComposition()">e</button>\
               </div>\
               <ul ng-controller="EditableListController">\
                 <li ng-repeat="city in attackTargets" ng-class="markedClass($index)" ng-click="toggleMark($index)">\
