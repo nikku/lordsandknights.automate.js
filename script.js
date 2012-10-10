@@ -9,16 +9,17 @@
   
   (function() {
 
-    var Action = function(fn, scheduledAt) {
+    var Action = function(fn, scheduledAt, city) {
       this.fn = fn;
       this.scheduledAt = scheduledAt;
       this.repeatMs = null;
       this.name = this.fn.name;
+      this.city = city;
     };
 
     Action.prototype = {
       log: function() {
-        console.log("Action ", fn, " due at ", new Date(this.scheduledAt));
+        U.debug("Action ", fn, " due at ", new Date(this.scheduledAt));
       }, 
       repeatIn: function(repeatMs) {
         this.repeatMs = repeatMs;
@@ -34,10 +35,10 @@
     };
     
     Actions.prototype = {
-      schedule: function(fn, delay) {
-        var action = new Action(fn, new Date().getTime() + delay);
+      schedule: function(fn, delay, city) {
+        var action = new Action(fn, new Date().getTime() + delay, city);
 
-        console.log("[actions] new action ", action, " at ", new Date(action.scheduledAt));
+        U.debug("[actions] new action ", action, " at ", new Date(action.scheduledAt));
 
         this.scheduledActions.push(action);
         this.updateTimer();
@@ -54,6 +55,8 @@
       }, 
 
       enable: function() {
+        U.debug("[actions] enable", this.scheduledActions);
+        
         this.enabled = true;
         this.updateTimer();
       }, 
@@ -69,7 +72,7 @@
         
         var next = null;
 
-        console.log("[actions] update timer", this.scheduledActions);
+        U.debug("[actions] update timer", this.scheduledActions);
 
         $.each(this.scheduledActions, function(i, e) {
           if (!next) {
@@ -80,7 +83,7 @@
           }
         });
 
-        console.log("[actions] next is ", next);
+        U.debug("[actions] next is ", next);
         if (this.timer) {
           T.cancel(this.timer);
         }
@@ -89,44 +92,52 @@
       }, 
 
       carryOutAction: function(action) {
-        console.log("[carry out action] ", action, " started");
+        U.debug("[carry out action] ", action, " started");
 
         var self = this;
         self.scheduledActions.splice(self.scheduledActions.indexOf(action), 1);
 
         self.setCurrentAction(action);
 
-        U.wait(1000).then(function() {
-          action.fn(action).then(function() {
-            console.log("[actions] ", action, " finished");
+        Navigation.navigateTo({ city: action.city })
+         .then(function() { 
+            return U.wait(1000);
+          })
+          .then(function() {
+            return action.fn(action);
+          })
+          .then(function() {
+            U.debug("[actions] ", action, " finished");
             if (action.repeatMs) {
               self.rescheduleAction(action, new Date().getTime() + action.repeatMs);
               action.repeatMs = null;
             }
-            self.setCurrentAction(null);
-          }).fail(function(e) {
-            console.log("[actions] ", action, "not completed due to", e);
-            self.rescheduleAction(action, action.scheduledAt + 10000);
             
+            U.info("[actions] ", action, "finished");
             self.setCurrentAction(null);
-          }); 
-        });
-      }, 
+          }, function(e) {
+            U.debug("[actions] ", action, "not completed due to", e);
+            self.rescheduleAction(action, action.scheduledAt + 10000);
+
+            U.info("[actions] ", action, "resulted in error ", e);
+            self.setCurrentAction(null);
+          });
+      },
 
       rescheduleAction: function(action, scheduledAt) {
         action.scheduledAt = scheduledAt;
         
-        console.log("[actions] reschedule", action, "to", new Date(scheduledAt));
+        U.debug("[actions] reschedule", action, "to", new Date(scheduledAt));
         this.scheduledActions.push(action);
         this.updateTimer();
       }, 
 
-      unschedule: function(fn) {
+      unschedule: function(fn, city) {
         
         var indexOfAction = -1;
         
         angular.forEach(this.scheduledActions, function(e, i) {
-          if (e.fn == fn) {
+          if (e.fn == fn && e.city == city) {
             indexOfAction = i;
           }
         });
@@ -240,30 +251,42 @@
       farmConfiguration: Storage.get("farmConfiguration") || { 
         "Some city" : { attackComposition: [ 6, 6, 6, 6, 6, 15], targets: [] }
       }, 
-      
+
       defaults: {
         attackComposition: [ 6, 6, 6, 6, 6, 15]
       }
     };
-    
+
     var Intel = window.Intel = {
       getBaseForCurrentCity: function() {
         var currentCity = Navigation.currentCityName();
         var base = null;
-        
+
         $(".nameDelimiter").each(function() {
           if ($(this).text() == currentCity) {
             base = $(this).parents(".level").parent();
           }
         });
-        
+
         if (!base) {
           throw new Error("No base found");
         }
-        
+
         return base;
       }, 
-      
+
+      getCityNames: function() {
+        return Navigation.navigateTo({ tab: 'no-of-castles' }).then(function() {
+          var cityNames = $(".habitatName");
+          var cities = [];
+          cityNames.each(function() {
+            cities.push($(this).text());
+          });
+          
+          return U.resolvedDefer(cities);
+        });
+      },
+
       getBuildingsLevelInfo: function() {
         var base = Intel.getBaseForCurrentCity();
         if (!base.length) {
@@ -291,7 +314,7 @@
               }
             };
           } else {
-            console.log(e.text(), "Does not match");
+            U.debug(e.text(), "Does not match");
           }
         });
         
@@ -397,7 +420,7 @@
         this.register(fn, delay, name);
         return name;
       }, 
-      
+
       register: function(fn, delay, name) {
         var self = this, 
             wrappedFn;
@@ -409,7 +432,7 @@
         
         this.timers[name] = { fn: fn, delay: delay, timer: setTimeout(wrappedFn, delay)};
       }, 
-      
+
       cancel: function(name) {
         var t = this.timers[name];
         if (t) {
@@ -418,14 +441,24 @@
         }
       }
     };
-    
+
     var T = window.T = new Timers();
-    
+
     var U = window.U = {
+      debug: function() {
+        if (false) {
+          console.log.apply(console, arguments);
+        }
+      }, 
+      info: function() {
+        if (true) {
+          console.log.apply(console, arguments);
+        }
+      }, 
       wait: function(delay) {
         var deferred = Q.defer();
 
-        console.log("[wait] " + delay + "ms");
+        U.debug("[wait] " + delay + "ms");
         T.delay(function() {
           deferred.resolve();
         }, delay);
@@ -439,10 +472,10 @@
         U.wait(1000).then(function() {
           var e = $(selector);
           if (e.length == 0) {
-            console.log("[click] ", selector, " not found");
+            U.debug("[click] ", selector, " not found");
             throw new Error("Element '" + selector + "' not found");
           } else {
-            console.log("[" + action + "] ", e);
+            U.debug("[" + action + "] ", e);
             e[action]();
             deferred.resolve();
           }
@@ -450,10 +483,10 @@
 
         return deferred.promise;
       }, 
-      resolvedDefer: function() {
+      resolvedDefer: function(value) {
         var deferred = Q.defer();
 
-        deferred.resolve();
+        deferred.resolve(value);
         return deferred.promise;
       }
     };
@@ -462,40 +495,41 @@
       currentCityName: function() {
         return $("#btn_hab_name").text();
       }, 
-      
-      navigateTo: function(city, tab) {
-        var deferred = Q.defer(), 
-            targetCity = city.replace(/-/g, " ");
+      navigateTo: function(page) {
 
-        // already in the selected city
-        if (Navigation.currentCityName() == targetCity) {
-          return U.resolvedDefer();
+        var city = (page.city || Navigation.currentCityName()).replace(/-/g, " ");
+        var tab = page.tab || "castle";
+
+        function navigateToCity() {
+          return U.click(".main .button[title='no-of-castles']")
+            .then(function() {
+              var cities = $(".habitatName"), 
+                  cityLink = null;
+
+              cities.each(function() {
+                if ($(this).text() == city) {
+                  cityLink = $(this);
+                }
+              });
+
+              if (!cityLink) {
+                throw new Error("Target city " + city + " not found");
+              }
+
+              return U.click(cityLink);
+            });
         }
 
-        U.click(".main .button[title='no.-of-castles']")
-         .then(function() {
-           var cities = $(".habitatName"), 
-               targetCityLink = null;
+        function nagivateToTab() {
+           return U.click(".main .button[title='" + tab + "']");
+        }
 
-           cities.each(function() {
-             if ($(this).text() == targetCity) {
-               targetCityLink = $(this);
-             }
-           });
-
-           if (!targetCityLink) {
-             throw new Error("Target city " + targetCity + " not found");
-           }
-
-           return U.click(targetCityLink);
-         })
-         .then(function() {
-           return U.click(".main .button[title=" + tab + "]");
-         }).then(function() {
-           return deferred.resolve(true);
-         });
-
-        return deferred.promise;
+        // already in the selected city
+        if (Navigation.currentCityName() == city) {
+          return nagivateToTab();
+        } else {
+          return navigateToCity().then(nagivateToTab);
+        }
       }
     }
   })();
@@ -508,76 +542,88 @@
   }
 
   function performMissions(action) {
-    return U.click(".main .button[title=castle]")
-      .then(function() {
-        // Close view mission (what ever it is)
-        $(".closeViewMission").click();
-        
-        return U.click("#habitatView a.tavern");
-      })
-      .then(function() {
-        var deferred = Q.defer(), 
-            clickDelay = 2000, 
-            startMissionPromises = [],
-            i = 0;
-        
-        startMissionPromises.push(U.wait((i + 1) * clickDelay).then(function() {
-          console.log("[overtime] schedule start");
-          var e = $(".div_checkbox_missions input[type=checkbox]:not(:disabled):not(:checked)");
-          while (e.length) {
-            e.eq(0).prop("checked", true);
-            
-            e = $(".div_checkbox_missions input[type=checkbox]:not(:disabled):not(:checked)");
-          }
-          
-          e = $(".div_checkbox_missions input[type=checkbox]:checked");
-          
-          if (e.length) {
-            i = e.length;
-            return U.click($("#btn_missions_start"));
-          } else {
-            return U.resolvedDefer();
-          }
-        }));
+    
+    function navigateToCastle() {
+      return Navigation.navigateTo({ tab: 'castle' });
+    }
+    
+    function navigateToTavern() {
+      // Close view mission (what ever it is)
+      $(".closeViewMission").click();
 
-        Q.all(startMissionPromises).then(function() {
-          console.log("[overtime] executed, triggered ", i, " new missions");
+      return U.click("#habitatView a.tavern");
+    }
+    
+    function checkAndPerformMissions() {
+      U.debug("[overtime] schedule start");
+      
+      $(".div_checkbox_missions input[type=checkbox]").prop("checked", false);
 
-          U.wait(5000).then(function() {
-            var closestTimeMs = -1;
+      var startedCount = 0;
 
-            if ($(".execute").length) {
-              closestTimeMs = 2000;
-            } else {
-              $(".resourceDetails .pictureButton:not(.noexecute)").parents(".resourceDetails.clickable").each(function() {
-                var timestr = $(this).find(".timeblock span").text();
-                if (timestr) {
-                  var timeMs = parseTimeMs(timestr);
+      while (true) {
+        var e = $(".div_checkbox_missions input[type=checkbox]:not(:disabled):not(:checked)");
+        if (!e.length) {
+          break;
+        }
 
-                  if (!isNaN(timeMs) && (closestTimeMs == -1 || timeMs < closestTimeMs)) {
-                    closestTimeMs = timeMs;
-                  }
-                }
-              });
-              
-              // no mission possible? check back in 4 minutes
-              if (closestTimeMs == -1) {
-                closestTimeMs = 1000 * 60 * 4;
-              }
+        e.eq(0).prop("checked", true);
+        startedCount++;
+      }
+
+      if (startedCount) {
+        return U.click($("#btn_missions_start")).then(function() { 
+          U.debug("[overtime] executed, triggered ", startedCount, " new missions");
+          U.resolvedDefer(startedCount); 
+        });
+      } else {
+        return U.resolvedDefer(0);
+      }
+    }
+    
+    function rescheduleAndFinish() {
+      var closestTimeMs = -1;
+
+      if ($(".execute").length) {
+        closestTimeMs = 2000;
+      } else {
+        $(".resourceDetails .pictureButton:not(.noexecute)").parents(".resourceDetails.clickable").each(function() {
+          var timestr = $(this).find(".timeblock span").text();
+          if (timestr) {
+            var timeMs = parseTimeMs(timestr);
+
+            if (!isNaN(timeMs) && (closestTimeMs == -1 || timeMs < closestTimeMs)) {
+              closestTimeMs = timeMs;
             }
-
-            action.repeatIn(closestTimeMs + 2000);
-            deferred.resolve();
-          });
+          }
         });
 
-        return deferred.promise;
-      });
-  };
+        // no mission possible? check back in 4 minutes
+        if (closestTimeMs == -1) {
+          closestTimeMs = 1000 * 60 * 4;
+        }
+      }
+
+      action.repeatIn(closestTimeMs + 2000);
+
+      return U.resolvedDefer();
+    }
+    
+    return navigateToCastle()
+      .then(navigateToTavern)
+      .then(function() { return U.wait(1000); })
+      .then(checkAndPerformMissions)
+      .then(function() { return U.wait(1000); })
+      .then(rescheduleAndFinish);
+  }
 
   function evolveCastel(action) {
-    // Navigate to buildings page
-    return U.click(".main .button[title='building-list']").then(function() {
+    
+    function navigateToBuildingList() {
+      return U.click(".main .button[title='building-list']");
+    }
+    
+    function evolveCastleAndFinish() {
       var deferred = Q.defer();
         
       if (Intel.canBuildMore()) {
@@ -586,31 +632,26 @@
           throw new Error("Building upgrade is null");
         }
         
-        console.log("[evolve] next upgrade is", nextUpgrade);
+        U.debug("[evolve] next upgrade is", nextUpgrade);
         Intel.performUpgrade(nextUpgrade.building).then(function(success) {
-          console.log("[evolve] started upgrade?", success);
+          U.debug("[evolve] started upgrade?", success);
           action.repeatIn(1000 * 60 * 2); // two minutes
           deferred.resolve();
         });
       } else {
         // cannot build more
-        console.log("[evolve] cannot build more!");
+        U.debug("[evolve] cannot build more!");
         action.repeatIn(1000 * 60 * 3); // three minutes
         deferred.resolve();
       }
-      return deferred.promise;
-    });
-  };
-
-  function tradeSilver(action) {
-    // too many resources?
-    if ("asddsa") {
-      // asdsda
       
+      return deferred.promise;
     }
-  };
-  
-  function AttackCastleBuilder(scope, castels, composition, currentCity) {
+    
+    return navigateToBuildingList().then(evolveCastleAndFinish);
+  }
+
+  function AttackCastleBuilder(scope, castels, composition, city) {
     
     var attackComposition = composition;
     var castlesToAttack = castels;
@@ -618,6 +659,8 @@
 
     this.doneCount = 0;
     this.inProgress = true;
+    
+    this.city = city;
     
     var self = this;
     
@@ -640,7 +683,7 @@
         var gotoMapsPage = (self.onMapsPage ? U.resolvedDefer() : U.click(".main .button[title=map]").then(function() { return U.wait(4000); }));
         var currentCastle = castlesToAttack[0];
 
-        console.log("[attack]", (castlesToAttack.length - attackedCastles.length), " attacks left. Next target is ", currentCastle);
+        U.debug("[attack]", (castlesToAttack.length - attackedCastles.length), " attacks left. Next target is ", currentCastle);
 
         return gotoMapsPage.then(function() {
           return U.click("#" + currentCastle.id, "mouseup");
@@ -671,7 +714,7 @@
           if (totalUnitCount >= 25) {
             var i = 0;
 
-            console.log("[attack] with ", totalUnitCount, " (composition: ", attackUnits, ")");
+            U.debug("[attack] with ", totalUnitCount, " (composition: ", attackUnits, ")");
 
             attackElements.each(function() {
               $(this).siblings(".unitsInput").val(attackUnits[i++]).blur();
@@ -684,19 +727,19 @@
 
               attackedCastles.push(currentCastle);
               action.repeatIn(1000); 
-              console.log("[attack] started");
+              U.debug("[attack] started");
               self.doneCount++;
 
               return U.resolvedDefer();
             });
           } else {
-            console.log("[attack] postponed: not enough troops");
+            U.debug("[attack] postponed: not enough troops");
             action.repeatIn(1000 * 60 * 10); // ten minutes
             return U.resolvedDefer();
           }
         });
       } else {
-        console.log("[attack] finished: no more castels to attack");
+        U.debug("[attack] finished: no more castels to attack");
         self.inProgress = false;
         return U.resolvedDefer();
       }
@@ -714,7 +757,7 @@
   //    T.delay(function() {
   //      $(".marketplace").eq(1).click();
   //      T.delay(function() {
-  //        console.log("Trading goods (5 people, ");
+  //        U.debug("Trading goods (5 people, ");
   //        $(".material_unit").eq(0).val(5).blur();
   //        
   //        var material = $(".material_resource").eq(0).parents(".material");
@@ -724,7 +767,7 @@
   //        $(".changeAction").click();
   //        var delay = 1000 * 60 * 60 * 2 + 30000;
   //        
-  //        console.log("Repeat at: " + new Date(new Date().getTime() + delay));
+  //        U.debug("Repeat at: " + new Date(new Date().getTime() + delay));
   //        timers.exchangeStone = T.delay(function() {
   //          exchangeStone();
   //        }, delay);
@@ -735,49 +778,56 @@
 
   var AutomateController = window.AutomateController = function($scope, $location, $routeParams, $route) {
     var shown = $scope.shownComponents = {};
-    
+
     var actions = $scope.actions = new Actions($scope);
-    
+
+    $scope.cities = [];
+
+    $scope.city = null;
+    $scope.tab = null;
+
     $scope.toggleShow = function(component) {
       shown[component] = !shown[component];
     };
-    
+
     $scope.show = function(component) {
       shown[component] = true;
     };
-    
+
     $scope.hide = function(component) {
       shown[component] = false;
     };
-    
+
     $scope.shown = function(component) {
       return shown.controls && shown[component];
     };
-    
+
     $scope.openCls = function(component) {
       return $scope.shown(component) ? 'active' : '';
     };
-    
+
     $scope.inActionCls = function() {
       return $scope.inAction() ? 'in-action' : '';
     };
-    
+
     $scope.automateEnabled = function() {
       return actions.enabled;
     };
-    
+
     $scope.nextAction = function() {
       return actions.nextAction;
     };
-    
+
     $scope.inAction = function() {
       return !!actions.currentAction;
     };
 
     $scope.enable = function() {
-      actions.schedule(performMissions, 2000);
-      actions.schedule(evolveCastel, 4000);
-      // actions.schedule(tradeResources, 10000);
+      angular.forEach($scope.cities, function(city) {
+        actions.schedule(performMissions, 2000, city);
+        actions.schedule(evolveCastel, 4000, city);
+      });
+
       actions.enable();
     };
 
@@ -787,103 +837,68 @@
     };
 
     $scope.updateLocation = function(data) {
-
-      if (data.city) {
-        data.city = data.city.replace(/ /g, "-");
+      var city = data.city || $routeParams.city || $scope.city;
+      if (city) {
+        $scope.city = city.replace(/-/g, " ");
       }
+      
+      $scope.tab = data.tab || $routeParams.tab;
 
-      $scope.currentLocation = { city: (data.city || $routeParams.city), tab: (data.tab || $routeParams.tab) };
-
-      $location.path("/" + $scope.currentLocation.city + "/" + $scope.currentLocation.tab);
+      $location.path("/" + $scope.city.replace(/ /g, "-") + "/" + $scope.tab);
+      
+      $scope.$apply();
+      $scope.$digest();
     }
+
+    $scope.timeUntilScheduled = function(action) {
+      var diff = action.scheduledAt - new Date().getTime();
+      
+      if (diff > 0) {
+        if (diff > 1000 * 60) {
+          return "in " + Math.floor(diff / (1000 * 60)) + "min";
+        } else 
+        if (diff > 1000) {
+         return "in " + Math.floor(diff / 1000) + "s";
+        } else {
+          return "in " + diff + "ms";
+        }
+      } else {
+        return "now!";
+      }
+    };
 
     // ::::::::::::::: page initialization :::::::::::::::::::
 
     $(".main .button").each(function() {
       var e = $(this),
-          title = e.attr("title").toLowerCase().replace(/ /g, "-");
-
+          title = e.attr("title").toLowerCase().replace(/ /g, "-").replace(/\./g, "");
       e.attr("title", title);
     }).on("click", function() {
       var e = $(this);
       
       T.delay(function() {
-        $scope.$apply(function() {
-          $scope.updateLocation({ tab: e.attr("title") });
-        });
+        $scope.updateLocation({ tab: e.attr("title") });
       }, 500);
     });
 
     function updateLocation(event) {
       T.delay(function() {
-        $scope.$apply(function() {
-          $scope.updateLocation({ city: Navigation.currentCityName() });
-        });
+        $scope.updateLocation({ city: Navigation.currentCityName() });
       }, 1000);
     };
     
-    function SendResourcesAdapter() {
-      
-    };
-    
-    SendResourcesAdapter.prototype = {
-      constants: {
-        transportCapacity: {
-          6: 500, 
-          7: 2500
-        }
-      }, 
-      
-      getCurrentTransportCapacityWithout: function(excludedId) {
-        var capacity = $(".mapMaxButton").filter
-      }, 
-      
-      addAllResources: function(resourceId) {
-        var neededCapacity = 
-          this.getCurrentTransportCapacityWithout(resourceId) + 
-          this.getMaxCapacity(resourceId);
-        
-        this.ensureTransportCapacity(neededCapacity);
-      }, 
-      
-      ensureTransportCapacity: function(capacity) {
-        var transportCapacity = SendResourcesAdapter.constants.transportCapacity, 
-            handCapacity = transportCapacity[6], 
-            oxCapacity = transportCapacity[7], 
-            
-            oxRequired = capacity % oxCapacity, 
-            handWithOxRequired = (capacity - (oxRequired * oxCapacity)) % handCapacity, 
-            handOnlyRequired = (capacity % handCapacity);
-            
-         
-      }
-    };
-    
-    function adjustTransportAndInputMax(event) {
-      var e = $(this);
-
-      var regexp = /(unitMax|resourceMax)([\\d]+)/m;
-      var result = regexp.exec(e.attr("id"));
-
-      if (!result || result[1] == "unitMax") {
-        return;
-      }
-
-      var resourceId = parseInt(result[2]);
-
-      var helper = new SendResourcesAdapter();
-      helper.addAllResources(resourceId);
-    };
-
     function registerEventHandlers() {
       $(document).on("click", "#nextHabitat", updateLocation);
       $(document).on("click", "#previousHabitat", updateLocation);
       $(document).on("click", ".castle_list", updateLocation);
       
-//      $(document).on("mousedown", ".mapMaxButton", adjustTransportAndInputMax);
-      
-      $scope.$apply(function() {
-        Navigation.navigateTo($routeParams.city, $routeParams.tab);
+      Intel.getCityNames().then(function(cities) {
+        $scope.$apply(function() {
+          $scope.cities = cities;
+        });
+
+        // navigate to stuff
+        Navigation.navigateTo({ city: $routeParams.city, tab: $routeParams.tab });
       });
     }
     
@@ -932,8 +947,8 @@
       return "";
     };
 
-    $scope.$watch(function() { return $scope.currentLocation; }, function(newValue) {
-      if ((newValue || {}).tab == "building-list") {
+    $scope.$watch(function() { return $scope.tab; }, function(newValue) {
+      if (newValue == "building-list") {
         $scope.nextUpgrade = Intel.getNextBuildingUpgrade();
       }
     });
@@ -941,8 +956,7 @@
 
   var AttackController = window.AttackController = function($scope) {
 
-    $scope.cities = [];
-    $scope.currentCity = null;
+    $scope.attackActions = {};
 
     $scope.farmConfiguration = C.farmConfiguration;
 
@@ -952,7 +966,7 @@
     $scope.attackComposition = null;
 
     $scope.editAttackComposition = false;
-    
+
     $scope.toggleEditAttackComposition = function() {
       $scope.editAttackComposition = !$scope.editAttackComposition;
     };
@@ -968,37 +982,20 @@
       });
     }
 
-    $scope.$watch("currentLocation", function(newVal) {
-      if (newVal && $scope.currentAttacks) {
-        $scope.currentAttacks.onMapsPage = (newVal.tab == "map");
+    $scope.$watch("city", function(city) {
+      if (!city) {
+        return;
       }
-      
-      $scope.currentCity = Navigation.currentCityName();
-      
-      if ($scope.cities.indexOf($scope.currentCity)) {
-        $scope.cities.push($scope.currentCity);
-      }
-    });
+      var farmConfig = $scope.farmConfiguration[city];
 
-    $scope.$watch("currentCity", function(newValue) {
-      if (newValue) {
-        if (!$scope.farmConfiguration[newValue]) {
-          $scope.farmConfiguration[newValue] = { attackComposition: C.defaults.attackComposition, targets: [] };
-        }
-        
-        $scope.attackTargets = $scope.farmConfiguration[newValue].targets;
-        $scope.attackComposition = $scope.farmConfiguration[newValue].attackComposition;
+      if (!farmConfig) {
+        farmConfig = $scope.farmConfiguration[city] = { attackComposition: C.defaults.attackComposition, targets: [] };
       }
-    });
 
-    $scope.$watch(function() { return $scope.currentLocation; }, function(newValue) {
-      if ((newValue || {}).tab == "building-list") {
-        var cities = [];
-        $(".nameDelimiter").each(function() {
-          cities.push($(this).text());
-        });
-        $scope.cities = cities;
-      }
+      $scope.attackTargets = farmConfig.targets;
+      $scope.attackComposition = farmConfig.attackComposition;
+
+      $scope.currentAttacks = $scope.attackActions[city];
     });
 
     $scope.$watch("shownComponents.controls", function(newVal, oldVal) {
@@ -1010,12 +1007,12 @@
     $scope.startCaptureTargets = function() {
       $(document).on("click-habitat", captureHabitatClick);
       $scope.hide("controls");
-      $(".main .button[title=map]").click();
+      Navigation.navigateTo({ tab: "map" });
     };
 
     $scope.clearTargets = function() {
-      if ($scope.currentCity) {
-        $scope.attackTargets = $scope.farmConfiguration[$scope.currentCity].targets = [];
+      if ($scope.city) {
+        $scope.attackTargets = $scope.farmConfiguration[$scope.city].targets = [];
       }
     };
 
@@ -1024,21 +1021,19 @@
     };
 
     $scope.stopAttacks = function() {
-      $scope.actions.unschedule($scope.currentAttacks.action());
+      $scope.actions.unschedule($scope.currentAttacks.action(), $scope.currentAttacks.city);
       $scope.currentAttacks = null;
     };
 
     $scope.attackCapturedTargets = function() {
-      $scope.currentAttacks = new AttackCastleBuilder($scope, $scope.attackTargets, $scope.attackComposition, $scope.currentCity);
-      $scope.actions.schedule($scope.currentAttacks.action(), 1000);
+      var attackAction = new AttackCastleBuilder($scope, $scope.attackTargets, $scope.attackComposition, $scope.city);
+      
+      $scope.currentAttacks = $scope.attackActions[$scope.city] = attackAction;
+      $scope.actions.schedule(attackAction.action(), 1000, $scope.city);
     };
   };
 
   var OptionsController = window.OptionsController = function($scope) {
-    
-    $scope.$watch("currentCity", function(newValue) {
-      console.log(newValue);
-    });
     
     $scope.save = function() {
       Storage.put("farmConfiguration", angular.copy(C.farmConfiguration));
@@ -1137,8 +1132,13 @@
             <button ng-show="automateEnabled()" ng-click="disable()" class="active">!</button>\
             <button ng-hide="automateEnabled()" ng-click="enable()">!</button>\
           </div>\
-          <div ng-show="shown(\'controls\') && automateEnabled()" class="status control-box">\
-            Next action: {{nextAction().name}} at {{ nextAction().scheduledAt | date:"mediumTime" }}\
+          <div ng-show="shown(\'controls\')" ng-switch on="automateEnabled()" class="status control-box">\
+            <span ng-switch-when="true">\
+              next {{nextAction().name}} for {{nextAction().city}} {{ timeUntilScheduled(nextAction()) }}\
+            </span>\
+            <span ng-switch-when="false">\
+              no scheduled actions\
+            </span>\
           </div>\
           <div class="building-upgrades control-box" ngm-if="shown(\'building-upgrades\')">\
             <div ng-controller="BuildingUpgradesController">\
@@ -1177,7 +1177,7 @@
           </div>\
           <div class="attack-upgrades control-box" ng-show="shown(\'attack\')">\
             <div ng-controller="AttackController">\
-              <h3>Attacks for <select ng-model="currentCity" ng-options="city for city in cities"></select></h3>\
+              <h3>Attacks for {{city}}</h3>\
               <div style="margin-top: 10px">\
                 <button ng-click="startCaptureTargets()">capture</button>\
                 <button ng-click="clearTargets()">clear</button>\
