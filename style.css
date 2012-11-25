@@ -7,7 +7,7 @@
   z-index: 160820;
 }
 
-#automate-overlay { 
+#automate-overlay {
   background: #CCC;
   opacity: 0.4;
   width: 100%;
@@ -28,16 +28,16 @@
 .control-box {
   border-radius: 3px;
   background: #FEFEFE;
-  
+
   float: left;
-  
+
   margin: 10px;
   padding: 10px;
 }
 
 .control-box .box {
-  margin-top: 5px; 
-  padding-top: 5px; 
+  margin-top: 5px;
+  padding-top: 5px;
   border-top: dotted 1px gray;
 }
 
@@ -75,7 +75,7 @@ button {
   padding-right: 4px;
   padding-left: 4px;
   min-width: 12px;
-  
+
   cursor: pointer;
   border: solid 1px #BBB;
   border-radius: 3px;
@@ -87,11 +87,11 @@ button:hover {
   background: #EEE;
 }
 
-button.active { 
+button.active {
   border-color: fuchsia;
   background: fuchsia;
 }
-button.active:hover { 
+button.active:hover {
   border-color: fuchsia;
   background: fuchsia;
 }
@@ -100,8 +100,13 @@ button.active:hover {
   border: dotted 3px darkcyan;
 }
 
+input.ng-invalid {
+  background: lightcoral;
+}
+
 .attack-composition-field {
-  width: 18px;
+  width: auto;
   margin-left: 3px;
-  text-align: right;
+  text-align: left;
+  border-style: none;
 }

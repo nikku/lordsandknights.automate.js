@@ -25,4 +25,4 @@ loadScript("angular.js");
 setTimeout(function() {
   loadScript("angular.ext.js");
   loadScript("script.js");
-});
+}, 1000);
