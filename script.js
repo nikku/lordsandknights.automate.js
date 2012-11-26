@@ -102,9 +102,7 @@
         function navigateToCity() {
           return Navigation
             .navigateTo({ city: action.city })
-            .then(function() {
-               return U.waitDefault();
-             });
+            .then(U.waitDefault);
         }
 
         function executeAction() {
@@ -286,6 +284,7 @@
         if (!base) {
           throw new Error("No base found");
         }
+
         return base;
       },
 
@@ -466,15 +465,15 @@
           console.log.apply(console, arguments);
         }
       },
-      waitDefault: function() {
-        return U.wait(2500);
+      waitDefault: function(value) {
+        return U.wait(2500, value);
       },
-      wait: function(delay) {
+      wait: function(delay, value) {
         var deferred = Q.defer();
 
         U.debug("[wait] " + delay + "ms");
         T.delay(function() {
-          deferred.resolve();
+          deferred.resolve(value);
         }, delay);
 
         return deferred.promise;
@@ -545,7 +544,7 @@
            return U.click(".main .button[title='" + tab + "']");
         }
 
-        var promise = U.resolvedDefer();
+        var promise = U.wait(200);
 
         // already in the selected city
         if (currentCity != city) {
@@ -668,7 +667,7 @@
         }
       }
 
-      action.repeatIn(closestTimeMs + 2000);
+      action.repeatIn(closestTimeMs + 10000);
 
       return U.resolvedDefer();
     }
@@ -682,7 +681,7 @@
       .then(rescheduleAndFinish);
   }
 
-  function EvolveCastlesBuilder(cities) {
+  function EvolveCastleBuilder(cities) {
 
     this.cities = cities;
 
@@ -692,7 +691,7 @@
       var repeatIn = -1;
 
       function navigateToBuildingList() {
-        return Navigation.navigateTo({tab: "building-list"});
+        return Navigation.navigateTo({ tab: "building-list" });
       }
 
       function repeatActionIn(newRepeatIn) {
@@ -744,119 +743,271 @@
     };
 
     this.action = action;
-  }
+  };
 
-  function AttackCastleBuilder(scope, castels, city) {
+  function FarmAction(castles, config, callbackScope) {
 
-    var attackComposition = composition;
-    var castlesToAttack = castels;
-    var attackedCastles = [];
+    this.config = config;
+    this.callbackScope = callbackScope;
 
-    this.doneCount = 0;
-    this.inProgress = true;
-
-    this.city = city;
+    // init the action with the castles given
+    this.init(castles);
 
     var self = this;
 
-    var internalAction = function attackCastles(action) {
-      this.doneCount = function() {
-        return self.doneCount;
-      };
-
-      this.inProgress = function() {
-        return self.inProgress;
-      };
+    this.resume = function resumeFarm(action) {
+      return self._resume(action);
     };
+  };
 
-    function attackNextCastle(action) {
+  FarmAction.prototype = {
 
-      if (attackedCastles.length < castlesToAttack.length) {
+    // logging /////////////////////////////////
 
-        if (self.onMapsPage) {
-          $("#mapCloseButtonContainer").click();
+    logAttackStartSuccess: function(attackerCity, target) {
+
+      var status = this.status[attackerCity];
+      status.outstanding--;
+      status.attacked++;
+
+      this.progress.outstanding--;
+      this.progress.attacked++;
+
+      U.info("[farm] attack ", attackerCity, " > ", target, "success");
+    },
+
+    logAttackStartFail: function(attackerCity, target, e) {
+
+      var status = this.status[attackerCity];
+      status.outstanding--;
+      status.failed++;
+
+      this.progress.outstanding--;
+      this.progress.failed++;
+
+      U.info("[farm] attack ", attackerCity, " > ", target, "failed: ", e);
+    },
+
+    // updating targets /////////////////////////////////
+
+    updateTargetProcessed: function(attacker, target) {
+
+      var targets = this.getFarmTargets(attacker);
+      var removed = targets.splice(0, 1);
+
+      targets.push(removed[0]);
+    },
+
+
+    // initialization /////////////////////////////////
+
+    init: function(castles) {
+
+      var attackingCastles = [];
+      var attackStatus = {};
+
+      var totalAttacks = 0;
+
+      for (var i = 0; i < castles.length; i++) {
+
+        var castle = castles[i];
+        var targets = this.getFarmTargets(castle);
+
+        if (targets && targets.length) {
+          attackingCastles.push(castle);
+
+          var targetsForCastle = targets.length;
+
+          attackStatus[castle] = { outstanding: targetsForCastle, attacked: 0, skipped: 0 };
+          totalAttacks += targetsForCastle;
         }
+      }
 
-        var gotoMapsPage = Navigation.navigateTo({ tab: "map" }).then(function() { return U.wait(4000); });
-        var currentCastle = castlesToAttack[0];
+      this.castles = attackingCastles;
+      this.status = attackStatus;
 
-        U.debug("[attack]", (castlesToAttack.length - attackedCastles.length), " attacks left. Next target is ", currentCastle);
+      this.progress = { outstanding: totalAttacks, attacked: 0, skipped: 0};
+    },
 
-        function removeCurrentCastle() {
-          // append castle to end
-          castlesToAttack.splice(0, 1);
-          castlesToAttack.push(currentCastle);
+    farm: function(city) {
 
-          attackedCastles.push(currentCastle);
-        }
+      // clone map if open
+      $("#mapCloseButtonContainer").click();
 
-        function handleError(error) {
-          U.info("Error occured: ", error);
-          removeCurrentCastle();
+      var status = this.status[city];
+      var targets = this.getFarmTargets(city).slice(0, status.outstanding);
 
+      function attackNext(stop) {
+        if (targets.length && !stop === false) {
+          var next = targets.shift();
+          return (this.farmTargetPromise(city, next))().then(attackNext);
+        } else {
           return U.resolvedDefer();
         }
+      }
 
-        return gotoMapsPage.then(function() {
-          return U.click("#" + currentCastle.id, "mouseup");
-        }).then(function() {
-          if ($(".headLineAttackLabel").text() == "Attack") {
-            // already on attack page
-            return U.resolvedDefer();
-          } else {
-            return U.click("#foreign_attack_click");
-          }
-        }).then(function() {
-          var totalUnitCount = 0;
-          var attackUnits = [];
+      return Navigation
+        .navigateTo({ tab: "map", city: city })
+        .then(U.waitDefault)
+        .then(attackNext);
+    },
 
-          var attackElements = $(".mapMaxButton:not(#silverMax):not(#unitMax7):not(#unitMax6)");
-          var i = 0;
+    reschedule: function(action, oldProgress) {
 
-          attackElements.each(function() {
-            var e = $(this);
-            var currentUnitMax = attackComposition[i++];
-            var available = +e.siblings(".unitsInputCount").text();
-            var toBeSent = Math.floor(Math.min(currentUnitMax, available));
+      U.info("[farm] finished for now; ", oldProgress, "/", this.progress);
 
-            attackUnits.push(toBeSent);
-            totalUnitCount += toBeSent;
-          });
+      if (this.hasMoreCastlesToStartAttacks()) {
+        action.repeatIn(1000 * 60 * 5); // five minutes
+        U.info("[farm] rechecking in 5 minutes");
+      }
 
-          if (totalUnitCount >= 25) {
-            var i = 0;
+      return U.resolvedDefer();
+    },
 
-            U.debug("[attack] with ", totalUnitCount, " (composition: ", attackUnits, ")");
+    _resume: function(action) {
 
-            attackElements.each(function() {
-              $(this).siblings(".unitsInput").val(attackUnits[i++]).blur();
-            });
-
-            return U.click("#attackButton").then(function() {
-              removeCurrentCastle();
-
-              action.repeatIn(1000);
-              U.debug("[attack] started");
-              self.doneCount++;
-
-              return U.resolvedDefer();
-            });
-          } else {
-            U.debug("[attack] postponed: not enough troops");
-            action.repeatIn(1000 * 60 * 10); // ten minutes
-            return U.resolvedDefer();
-          }
-        }, handleError);
-      } else {
-        U.debug("[attack] finished: no more castels to attack");
-        self.inProgress = false;
+      if (!this.hasMoreCastlesToStartAttacks()) {
         return U.resolvedDefer();
       }
-    };
 
-    this.action = function() {
-      return internalAction;
-    };
+      var oldProgress = angular.copy(this.progress);
+
+      var promise = U.wait(500);
+
+      for (var i = 0; i < this.castles.length; i++) {
+        var castle = this.castles[i];
+
+        if (this.canResumeFarm(castle)) {
+          promise = promise.then(this.farmPromise(castle));
+        }
+      }
+
+      promise = promise.then(this.reschedulePromise(action, oldProgress));
+
+      return promise;
+    },
+
+    getFarmTargets: function(castle) {
+      return (this.config.farmConfiguration[castle] || {}).targets;
+    },
+
+    getAttackComposition: function(castle) {
+      return (this.config.farmConfiguration[castle] || {}).attackComposition;
+    },
+
+    hasMoreCastlesToStartAttacks: function() {
+      return !!this.castles.length;
+    },
+
+    canResumeFarm: function(city) {
+      var farmStatus = this.status[city];
+
+      if (!farmStatus.outstanding) {
+        return false;
+      }
+
+      if (!farmStatus.pauseUntil) {
+        return true;
+      } else {
+        var now = new Date();
+
+        if (now.getTime() <= farmStatus.pauseUntil.getTime()) {
+          farmStatus.pauseUntil = null;
+          return true;
+        } else {
+          return false;
+        }
+      }
+    },
+
+    inProgress: function() {
+      return this.progress && this.progress.outstanding > 0;
+    },
+
+    // promises /////////////////////////////////////////////////////
+
+    farmTargetPromise: function(city, target) {
+
+      var self = this;
+
+      return function() {
+        var promise = U.click("#" + target.id, "mouseup");
+
+        var success = false;
+
+        var attackComposition = self.getAttackComposition(city);
+
+        return promise
+          .then(function() {
+            if ($(".headLineAttackLabel").text() == "Attack") {
+              // already on attack page
+              return U.resolvedDefer();
+            } else {
+              return U.click("#foreign_attack_click");
+            }
+          })
+          .then(function() {
+            var totalUnitCount = 0;
+            var attackUnits = [];
+
+            var attackElements = $(".mapMaxButton:not(#silverMax):not(#unitMax7):not(#unitMax6)");
+            var i = 0;
+
+            attackElements.each(function() {
+              var e = $(this);
+              var currentUnitMax = attackComposition[i++];
+              var available = +e.siblings(".unitsInputCount").text();
+              var toBeSent = Math.floor(Math.min(currentUnitMax, available));
+
+              attackUnits.push(toBeSent);
+              totalUnitCount += toBeSent;
+            });
+
+            if (totalUnitCount >= 25) {
+              var i = 0;
+
+              U.debug("[attack] with ", totalUnitCount, " (composition: ", attackUnits, ")");
+
+              attackElements.each(function() {
+                $(this).siblings(".unitsInput").val(attackUnits[i++]).blur();
+              });
+
+              return U.click("#attackButton");
+            } else {
+              success = false;
+              return U.resolvedDefer();
+            }
+          }, function(e) {
+            self.logAttackStartFail(city, target, e);
+          })
+          .then(function() {
+            if (success) {
+              self.logAttackStartSuccess(city, target);
+            }
+
+            self.updateTargetProcessed(city, target);
+            return U.resolvedDefer(success);
+          });
+      };
+    },
+
+    farmPromise: function(city) {
+
+      var self = this;
+
+      return function() {
+        return self.farm(city);
+      };
+    },
+
+    reschedulePromise: function(action, attackCount) {
+
+      var self = this;
+
+      return function() {
+        return self.reschedule(action, attackCount);
+      };
+    }
   };
 
   //function exchangeStone() {
@@ -919,6 +1070,33 @@
       return $scope.inAction() ? 'in-action' : '';
     };
 
+    $scope.farmInProgress = function() {
+      return $scope.farmAction && $scope.farmAction.inProgress();
+    };
+
+    $scope.farmStatus = function() {
+      if (!$scope.farmAction) {
+        return "off";
+      }
+
+      var status = $scope.farmAction.progress;
+      return status.outstanding + "/" + status.attacked + "/" + status.skipped;
+    };
+
+    $scope.stopFarm = function() {
+      actions.unschedule($scope.farmAction.resume, 1000);
+    };
+
+    $scope.startFarm = function() {
+      if ($scope.farmInProgress()) {
+        return;
+      }
+
+      var farmAction = $scope.farmAction = new FarmAction($scope.cities, C, $scope);
+
+      actions.schedule(farmAction.resume, 1000);
+    },
+
     $scope.automateEnabled = function() {
       return actions.enabled;
     };
@@ -936,7 +1114,7 @@
         actions.schedule(performMissions, 2000, city);
       });
 
-      var builder = new EvolveCastlesBuilder($scope.cities);
+      var builder = new EvolveCastleBuilder($scope.cities);
 
       actions.schedule(builder.action, 4000);
       actions.enable();
@@ -952,7 +1130,7 @@
       actions.purge();
 
       var search = $location.search();
-      search.automate = false;
+      delete search.automate;
 
       $location.search(search);
     };
@@ -1014,7 +1192,7 @@
       if (customCities) {
         customCities = customCities.split(/,/);
         angular.forEach(customCities, function(e, i) {
-          customCities[i] = e.replace("-", " ");
+          customCities[i] = e.replace(/-/g, " ");
         });
 
         U.info("[automation] Using custom cities: ", customCities);
@@ -1063,8 +1241,12 @@
       $scope.cityUpgrades.splice(index, 1);
     };
 
-    $scope.addUpgrade = function(upgrade) {
-      $scope.cityUpgrades.push(upgrade);
+    $scope.addUpgrade = function(upgrade, index) {
+      if (index !== undefined) {
+        $scope.cityUpgrades.splice(index, 0, upgrade);
+      } else {
+        $scope.cityUpgrades.push(upgrade);
+      }
     };
 
     $scope.upgradeLevel = function(upgrade, index) {
@@ -1165,6 +1347,19 @@
       Navigation.navigateTo({ tab: "map" });
     };
 
+    $scope.highlightCaptured = function() {
+
+      $scope.hide("controls");
+
+      Navigation.navigateTo({ tab: "map" })
+        .then(U.waitDefault)
+        .then(function() {
+          angular.forEach($scope.attackTargets, function(e) {
+            $("#" + e.id).addClass("click-captured-city");
+          });
+        });
+    };
+
     $scope.clearTargets = function() {
       if ($scope.city) {
         $scope.attackTargets = $scope.farmConfiguration[$scope.city].targets = [];
@@ -1173,18 +1368,6 @@
 
     $scope.removeTarget = function(index) {
       $scope.attackTargets.splice(index, 1);
-    };
-
-    $scope.stopAttacks = function() {
-      $scope.actions.unschedule($scope.currentAttacks.action(), $scope.currentAttacks.city);
-      $scope.currentAttacks = null;
-    };
-
-    $scope.attackCapturedTargets = function() {
-      var attackAction = new AttackCastleBuilder($scope, $scope.attackTargets, $scope.attackComposition, $scope.city);
-
-      $scope.currentAttacks = $scope.attackActions[$scope.city] = attackAction;
-      $scope.actions.schedule(attackAction.action(), 1000, $scope.city);
     };
   };
 
@@ -1298,6 +1481,8 @@
             </span>\
             <button ng-show="automateEnabled()" ng-click="disable()" class="active">!</button>\
             <button ng-hide="automateEnabled()" ng-click="enable()">!</button>\
+            <button ng-hide="farmInProgress()" ng-click="startFarm()">!!</button>\
+            <button ng-show="farmInProgress()" ng-click="stopFarm()" class="active">!! {{farmStatus()}}</button>\
           </div>\
           <div ng-show="shown(\'controls\')" ng-switch on="automateEnabled()" class="status control-box">\
             <span ng-switch-when="true">\
@@ -1323,7 +1508,7 @@
                       {{upgrade.name}} (Level {{ upgradeLevel(upgrade, $index) }})\
                       <div style="float:right">\
                         <button ng-click="removeUpgrade($index)">-</button>\
-                        <button ng-click="addUpgrade(upgrade)">+</button>\
+                        <button ng-click="addUpgrade(upgrade, $index)">+</button>\
                       </div>\
                     </span>\
                   </span>\
@@ -1347,9 +1532,8 @@
               <h3>Attacks for {{city}}</h3>\
               <div style="margin-top: 10px">\
                 <button ng-click="startCaptureTargets()">capture</button>\
+                <button ng-click="highlightCaptured()">highlight</button>\
                 <button ng-click="clearTargets()">clear</button>\
-                <button ng-hide="currentAttacks.inProgress" ng-click="attackCapturedTargets()">attack selected ({{attackTargets.length}})</button>\
-                <button ng-show="currentAttacks.inProgress" ng-click="stopAttacks()" class="active">attacked ({{currentAttacks.doneCount}}/{{attackTargets.length}})</button>\
               </div>\
               <div style="margin-top: 10px">\
                 comp <input attack-composition ng-model="attackComposition" class="attack-composition-field" />\

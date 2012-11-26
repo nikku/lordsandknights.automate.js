@@ -97,7 +97,9 @@ button.active:hover {
 }
 
 .click-captured-city {
-  border: dotted 3px darkcyan;
+  border: dotted 5px darkcyan;
+  background: fuchsia;
+  opacity: 0.5;
 }
 
 input.ng-invalid {
