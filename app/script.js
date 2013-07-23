@@ -93,7 +93,7 @@
       },
 
       carryOutAction: function(action) {
-        U.info("[action]", action.name, "[start]");
+        U.debug("[action]", action.name, "[start]");
 
         this.setCurrentAction(action);
         this.scheduledActions.splice(this.scheduledActions.indexOf(action), 1);
@@ -116,6 +116,9 @@
           if (action.repeatMs) {
             self.rescheduleAction(action, new Date().getTime() + action.repeatMs);
             action.repeatMs = null;
+          } else {
+            // update timer to get how to proceed
+            self.updateTimer();
           }
 
           U.info("[actions]", action.name, "[finished]");
@@ -125,7 +128,7 @@
           self.setCurrentAction(null);
           self.rescheduleAction(action, action.scheduledAt + 10000);
 
-          U.info("[actions]", action, "[finished in error]", e);
+          U.info("[actions]", action, "[resulted in error]", e);
         }
 
         if (action.city) {
@@ -267,7 +270,7 @@
         {name: "Lumberjack", type: "building"}, {name: "Keep", type: "building"}, {name: "Quarry", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Farm", type: "building"}, {name: "Fortifications", type: "building"}, {name: "Fortifications", type: "building"}, {name: "Lumberjack", type: "building"}, {name: "Quarry", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Wood store", type: "building"},
         {name: "Stone store", type: "building"}, {name: "Fortifications", type: "building"}, {name: "Ore store", type: "building"}, {name: "Farm", type: "building"}, {name: "Farm", type: "building"}, {name: "Farm", type: "building"}, {name: "Wood store", type: "building"}, {name: "Keep", type: "building"}, {name: "Stone store", type: "building"}, {name: "Keep", type: "building"}, {name: "Ore store", type: "building"}, {name: "Farm", type: "building"}, {name: "Wood store", type: "building"}, {name: "Stone store", type: "building"}, {name: "Ore store", type: "building"}, {name: "Farm", type: "building"}, {name: "Wood store", type: "building"}, {name: "Stone store", type: "building"}, {name: "Ore store", type: "building"}, {name: "Ore store", type: "building"}, {name: "Farm", type: "building"}, {name: "Lumberjack", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Quarry", type: "building"}, {name: "Keep", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Ore mine", type: "building"}, {name: "Ore mine", type: "building"}],
       farmConfiguration: Storage.get("farmConfiguration") || {
-        "Some city" : { attackComposition: [ 6, 6, 6, 6, 6, 15], targets: [] }
+        "Some city" : { attackComposition: [ 6, 6, 6, 6, 6, 15], targets: [], enabled: false }
       },
 
       defaults: {
@@ -305,14 +308,23 @@
         return base;
       },
 
-      getCityNames: function() {
-        return Navigation.navigateTo({ tab: 'no-of-castles' }).then(function() {
-          var cityNames = $(".habitatName");
+      getCitiesMetadata: function() {
+        return Navigation.navigateTo({ tab: 'building-list' }).then(function() {
+          var nameElements = $(".name");
+
           var cities = [];
-          cityNames.each(function() {
-            cities.push($(this).text());
+          var metadata = { };
+
+          nameElements.each(function() {
+
+            var nameElement = $(this);
+            var name = nameElement.text().trim();
+
+            cities.push(name);
+            metadata[name] = nameElement.metadata();
           });
-          return U.resolvedDefer(cities);
+
+          return U.resolvedDefer({ cities: cities, metadata: metadata });
         });
       },
 
@@ -483,7 +495,7 @@
         }
       },
       waitDefault: function(value) {
-        return U.wait(2500, value);
+        return U.wait(3000, value);
       },
       /**
        * Wait for specific delay
@@ -552,6 +564,24 @@
         return $(".main .button.active").attr("title");
       },
 
+      goPrevious: function() {
+        var e = $("#previousHabitat");
+        if (e.is(".disabled")) {
+          return U.resolvedDefer(false);
+        } else {
+          return U.click(e);
+        }
+      },
+
+      goNext: function() {
+        var e = $("#nextHabitat");
+        if (e.is(".disabled")) {
+          return U.resolvedDefer(false);
+        } else {
+          return U.click(e);
+        }
+      },
+
       navigateTo: function(page) {
         var currentCity = Navigation.currentCity();
         var currentTab = Navigation.currentTab();
@@ -608,7 +638,7 @@
 
   function performMissions(action) {
 
-    var SKIP_MISSION_NAMES = [  ];
+    var SKIP_MISSION_NAMES = [ "Collect taxes" ];
 
     var startedStats = null;
 
@@ -804,10 +834,10 @@
     }
   };
 
-  function FarmAction(castles, config, callbackScope) {
+  function FarmAction(castles, config, scope) {
 
     this.config = config;
-    this.callbackScope = callbackScope;
+    this.scope = scope;
 
     // init the action with the castles given
     this.init(castles);
@@ -832,30 +862,38 @@
       this.progress.outstanding--;
       this.progress.attacked++;
 
-      U.info("[farm] attack ", attackerCity, " > ", target, "success");
+      U.debug("[farm] attack ", attackerCity, " > ", target.id + "#" + target.name, "success");
     },
 
-    logAttackStartFail: function(attackerCity, target, e) {
+    logAttackSkipped: function(attackerCity, target, e) {
 
       var status = this.status[attackerCity];
       status.outstanding--;
-      status.failed++;
+      status.skipped++;
 
       this.progress.outstanding--;
-      this.progress.failed++;
+      this.progress.skipped++;
 
-      U.info("[farm] attack ", attackerCity, " > ", target, "failed: ", e);
+      if (e instanceof Error) {
+        U.info("[farm] skip ", attackerCity, " -> ", target, " due to ", e);
+      } else {
+        U.info("[farm] skip ", attackerCity, " -> ", target, ": " + e);
+      }
     },
 
     // updating targets /////////////////////////////////
 
     updateTargetProcessed: function(attacker, target) {
 
-      var targets = this.getFarmTargets(attacker);
-      var removed = targets.shift();
+      var self = this;
 
-      U.info("[farm] Processed: ", target, "; add ", removed, " to end of queue");
-      targets.push(removed);
+      this.scope.$apply(function() {
+        var targets = self.getFarmTargets(attacker);
+        var removed = targets.shift();
+
+        U.debug("[farm] processed: ", target.id, "; add ", removed.id, " to end of queue");
+        targets.push(removed);
+      });
     },
 
 
@@ -915,7 +953,7 @@
           var link = Intel.getCityLink(city);
           return U.click(link);
         })
-        .then(U.waitDefault)
+        .then(U.waitForPromise(5000))
         .then(attackNextOrStop);
 
       return deferred.promise;
@@ -923,11 +961,11 @@
 
     reschedule: function(action, oldProgress) {
 
-      U.info("[farm] finished for now; ", oldProgress, "/", this.progress);
+      U.info("[farm] finished for now; ", oldProgress.outstanding, " > ", this.progress.outstanding);
 
       if (this.hasMoreCastlesToStartAttacks()) {
         action.repeatIn(1000 * 60 * 5); // five minutes
-        U.info("[farm] rechecking in 5 minutes");
+        U.debug("[farm] rechecking in 5 minutes");
       }
 
       return U.resolvedDefer();
@@ -949,18 +987,28 @@
         var castle = castles[i];
 
         if (this.canResumeFarm(castle)) {
-          U.info("[farm] +farm promise (", castle, ")");
+          U.debug("[farm] +farm promise (", castle, ")");
           promise = promise.then(this.farmPromise(castle));
         }
       }
 
-      U.info("[farm] +reschedule promise");
+      U.debug("[farm] +reschedule promise");
       return promise
         .then(this.reschedulePromise(action, oldProgress));
     },
 
+    isFarmEnabled: function(castle) {
+      var castleConfig = this.config.farmConfiguration[castle];
+      return castleConfig && castleConfig.enabled;
+    },
+
     getFarmTargets: function(castle) {
-      return (this.config.farmConfiguration[castle] || {}).targets;
+      var castleConfig = this.config.farmConfiguration[castle];
+      if (!castleConfig) {
+        return [];
+      }
+
+      return castleConfig.targets || [];
     },
 
     getAttackComposition: function(castle) {
@@ -1021,11 +1069,16 @@
       var self = this;
       var attackComposition = self.getAttackComposition(city);
 
-      var e = $("#" + target.id);
-      if (!e.length) {
-        U.info("[farm]", target, "not found. skipping");
+      if (!this.isFarmEnabled(city)) {
+        self.logAttackSkipped(city, target, "farm disabled");
         self.updateTargetProcessed(city, target);
         return U.resolvedDefer(true);
+      }
+
+      var e = $("#" + target.id);
+      if (!e.length) {
+        U.info("[farm] link not found: ", "#", target.id);
+        return U.resolvedDefer(false);
       }
 
       return U.click(e, "mouseup")
@@ -1034,7 +1087,12 @@
             // already on attack page
             return U.resolvedDefer();
           } else {
-            return U.click("#foreign_attack_click");
+            var attackButton = $("#foreign_attack_click");
+            if (attackButton.length) {
+              return U.click(attackButton);
+            } else {
+              throw "Attack button not found. City changed owner?";
+            }
           }
         })
         .then(function() {
@@ -1057,7 +1115,7 @@
           if (totalUnitCount >= 25) {
             var i = 0;
 
-            U.info("[farm] with ", totalUnitCount, " (composition: ", attackUnits, ")");
+            U.debug("[farm] with ", totalUnitCount, " (composition: ", attackUnits, ")");
 
             attackElements.each(function() {
               $(this).siblings(".unitsInput").val(attackUnits[i++]).blur();
@@ -1069,7 +1127,7 @@
             return U.resolvedDefer(false);
           }
         }, function(e) {
-          self.logAttackStartFail(city, target, e);
+          self.logAttackSkipped(city, target, e);
           return U.resolvedDefer();
         })
         .then(function(success) {
@@ -1321,11 +1379,12 @@
         U.info("[automation] Using custom cities: ", customCities);
       }
 
-      var loadCityNames = customCities ? U.resolvedDefer(customCities) : Intel.getCityNames();
+      Intel.getCitiesMetadata().then(function(data) {
 
-      loadCityNames.then(function(cities) {
+        $scope.cities = customCities || data.cities;
+        $scope.citiesMetadata = data.metadata;
 
-        $scope.cities = cities;
+        console.log(data);
 
         T.delay(function() {
           $scope.$apply();
@@ -1344,6 +1403,190 @@
     }
 
     T.delay(registerEventHandlers, 1000);
+  };
+
+  var EvalController = window.EvalController = function($scope, $debounce) {
+
+    var query = $scope.query = { result: "" };
+
+    function evalQueryString(str, query) {
+      var result;
+
+      try {
+        result = eval(str);
+        if (!result) {
+          return null;
+        }
+
+      } catch (e) {
+        query.status.error = e;
+        result = "error";
+      }
+
+      if ($.isArray(result)) {
+        result = $.map(result, function recurs(n) {
+            return ($.isArray(n) ? $.map(n, recurs): n);
+        });
+      } else {
+        result = [ result ];
+      }
+
+      return result;
+    };
+
+    function singleEval(query) {
+
+      query.status = { total: 1, done: 0 };
+
+      var result = evalQueryString(query.str, query);
+      if (result) {
+        addQueryResult(result, query);
+      }
+    }
+
+    function multiEval(query, cities) {
+
+      var str = query.str;
+      var nextCity = cities.shift();
+
+      // init status
+      query.status = { total: cities.length, done: 0 };
+
+      function evalNext() {
+        var currentCity = Navigation.currentCity();
+
+        if (query.canceled) {
+          query.status = null;
+          return;
+        }
+
+        if (currentCity !== nextCity) {
+          Navigation.goNext().then(function(success) {
+            if (success !== false) {
+              $scope.$apply(function() {
+                evalNext();
+              });
+            } else {
+              return;
+            }
+          });
+        } else {
+          var result = evalQueryString(str, query);
+          result.unshift(currentCity);
+
+          addQueryResult(result, query);
+
+          nextCity = cities.shift();
+          evalNext();
+        }
+      };
+
+      function goPrevious() {
+        return Navigation.goPrevious().then(function(success) {
+          if (success !== false || query.canceled) {
+            return goPrevious();
+          } else {
+            return Q.resolvedDefer();
+          }
+        });
+      }
+
+      function gotoStart() {
+        var deferred = Q.defer();
+
+        function goPrevious() {
+          Navigation.goPrevious().then(function(success) {
+            if (success !== false) {
+              return goPrevious();
+            } else {
+              deferred.resolve();
+            }
+          });
+        }
+
+        goPrevious();
+
+        return deferred.promise;
+      }
+
+      gotoStart().then(evalNext);
+    }
+
+    function addQueryResult(result, query) {
+      query.result += result.join("\t") + "\n";
+
+      if (query.status) {
+          query.status.done++;
+      }
+    }
+
+    $scope.cancel = function() {
+      angular.extend(query, { status: null, canceled: false });
+    };
+
+    function findQueryByName(queries, name) {
+      for (var i = 0; i < queries.length; i++) {
+        var q = queries[i];
+        if (q.name === name) {
+          return q;
+        }
+      }
+      return null;
+    }
+
+    $scope.save = function() {
+      var queries = Storage.get("queries") || [];
+
+      if (!query.name) {
+        query.name = "query_" + queries.length + "_" + Math.floor((Math.random()*10)+1);
+      }
+
+      var storedQuery = findQueryByName(queries, query.name);
+      if (storedQuery) {
+        storedQuery.str = query.str;
+      } else {
+        storedQuery = { str: query.str, name: query.name };
+        queries.push(storedQuery);
+      }
+
+      Storage.put("queries", queries);
+    };
+
+    var loadQueryByName = $debounce(function(name) {
+        var queries = Storage.get("queries") || [];
+        var q = findQueryByName(queries, name);
+        if (q) {
+          $scope.$apply(function() {
+            query.str = q.str;
+          });
+        }
+    }, 2000);
+
+    $scope.$watch("query.name", function(newValue) {
+      if (newValue) {
+        loadQueryByName(newValue);
+      }
+    });
+
+    $scope.eval = function(mode) {
+      if (!$scope.done()) {
+        return;
+      }
+
+      angular.extend(query, { canceled: false, result: "" });
+
+      if (mode === 'CURRENT') {
+        singleEval(query);
+      } else
+      if (mode === 'MULTI') {
+        var cities = angular.copy($scope.cities);
+        multiEval(query, cities);
+      }
+    };
+
+    $scope.done = function() {
+      return !query.status || query.status.total === query.status.done;
+    };
   };
 
   var BuildingUpgradesController = window.BuildingUpgradesController = function($scope, $location, $routeParams) {
@@ -1403,59 +1646,33 @@
 
     $scope.attackActions = {};
 
-    $scope.farmConfiguration = C.farmConfiguration;
+    $scope.allFarmConfigurations = C.farmConfiguration;
 
-    $scope.currentAttacks = null;
-
-    $scope.attackTargets = null;
-    $scope.attackComposition = null;
-
-//
-//    $(document).on("click", ".habitatContainer clickRectangle", function(event) {
-//      $scope.mapSelectedCity = $(this).attr("id");
-//    });
-//
-//    $scope.onLeave({ tab: "map" }, function() {
-//
-//    });
-//
-//    $scope.offerOptions("map", {
-//      calculateDistances: function() {
-//
-//      }
-//    });
+    $scope.currentConfig = null;
 
     $scope.elements = function() {
-      return $scope.attackTargets;
+      return $scope.currentConfig.targets;
     };
 
     function captureHabitatClick(event, city) {
       $scope.$apply(function() {
-        $scope.attackTargets.push(city);
+        $scope.currentConfig.targets.push(city);
         $("#" + city.id).addClass("click-captured-city");
       });
     }
-
-    $scope.$watch("attackComposition", function(newValue) {
-      if (newValue && $scope.city) {
-        $scope.farmConfiguration[$scope.city].attackComposition = newValue;
-      }
-    });
 
     $scope.$watch("city", function(city) {
       if (!city) {
         return;
       }
-      var farmConfig = $scope.farmConfiguration[city];
 
-      if (!farmConfig) {
-        farmConfig = $scope.farmConfiguration[city] = { attackComposition: C.defaults.attackComposition, targets: [] };
+      var currentConfig = $scope.allFarmConfigurations[city];
+
+      if (!currentConfig) {
+        currentConfig = $scope.allFarmConfigurations[city] = { attackComposition: C.defaults.attackComposition, targets: [], enabled: false };
       }
 
-      $scope.attackTargets = farmConfig.targets;
-      $scope.attackComposition = farmConfig.attackComposition;
-
-      $scope.currentAttacks = $scope.attackActions[city];
+      $scope.currentConfig = currentConfig;
     });
 
     $scope.$watch("shownComponents.controls", function(newVal, oldVal) {
@@ -1477,28 +1694,53 @@
       Navigation.navigateTo({ tab: "map" })
         .then(U.waitDefault)
         .then(function() {
-          angular.forEach($scope.attackTargets, function(e) {
+          var metadata = $scope.citiesMetadata[$scope.city];
+          return U.resolvedDefer();
+        })
+        .then(U.waitDefault)
+        .then(function() {
+          angular.forEach($scope.currentConfig.targets, function(e) {
             $("#" + e.id).addClass("click-captured-city");
           });
+
+          return U.resolvedDefer();
         });
     };
 
     $scope.clearTargets = function() {
       if ($scope.city) {
-        $scope.attackTargets = $scope.farmConfiguration[$scope.city].targets = [];
+        $scope.currentConfig.targets = [];
       }
     };
 
     $scope.removeTarget = function(index) {
-      $scope.attackTargets.splice(index, 1);
+      $scope.currentConfig.targets.splice(index, 1);
     };
   };
 
   var OptionsController = window.OptionsController = function($scope, $location, $timeout) {
 
+    $scope.loginData = {
+      email: email,
+      password: password,
+      worldID: worldID,
+      worldUrl: mServer,
+      languageID: mLanguage,
+      logoutUrl: mLogoutUrl,
+      mapUrl: mapUrl
+    };
+
+    $scope.loginUrl = function() {
+      return $location.absUrl();
+    };
+
     $scope.save = function() {
       Storage.put("farmConfiguration", angular.copy(C.farmConfiguration));
       Storage.put("cityUpgrades", angular.copy(C.cityUpgrades));
+    };
+
+    $scope.reload = function() {
+      $("#atm-login-form").submit();
     };
 
     $scope.applyCustomCities = function() {
@@ -1612,6 +1854,7 @@
               <button ng-click="hide(\'controls\')">&laquo;</button>\
               <button ng-click="toggleShow(\'building-upgrades\')" ng-class="openCls(\'building-upgrades\')">b</button>\
               <button ng-click="toggleShow(\'attack\')" ng-class="openCls(\'attack\')">a</button>\
+              <button ng-click="toggleShow(\'query\')" ng-class="openCls(\'query\')">q</button>\
               <button ng-click="toggleShow(\'options\')" ng-class="openCls(\'options\')">o</button>\
             </span>\
             <button ng-show="automateEnabled()" ng-click="disable()" class="active">!</button>\
@@ -1671,10 +1914,11 @@
                 <button ng-click="clearTargets()">clear</button>\
               </div>\
               <div style="margin-top: 10px">\
-                comp <input attack-composition ng-model="attackComposition" class="attack-composition-field" />\
+                comp <input attack-composition ng-model="currentConfig.attackComposition" class="attack-composition-field" />\
+                <input type="checkbox" title="enable auto farm" ng-model="currentConfig.enabled" />\
               </div>\
               <ul ng-controller="EditableListController">\
-                <li ng-repeat="city in attackTargets" ng-class="markedClass($index)" ng-click="toggleMark($index)">\
+                <li ng-repeat="city in currentConfig.targets" ng-class="markedClass($index)" ng-click="toggleMark($index)">\
                   {{city.name}} ({{city.points}} Points)\
                   <div style="float:right">\
                     <button ng-click="removeTarget($index)">-</button>\
@@ -1682,7 +1926,7 @@
                 </li>\
               </ul>\
               <div class="box">\
-                <textarea style="width: 190px; height: 40px; overflow: hidden; border: none; padding: 5px; background: #EEE;">{{attackTargets}}</textarea>\
+                <textarea style="width: 190px; height: 40px; overflow: hidden; border: none; padding: 5px; background: #EEE;">{{currentConfig.targets}}</textarea>\
               </div>\
             </div>\
           </div>\
@@ -1691,6 +1935,7 @@
               <h3>Options</h3>\
               <div style="margin-top: 10px">\
                 <button ng-click="save()">save</button>\
+                <button ng-click="reload()">reload</button>\
               </div>\
               <div style="margin-top: 10px">\
                  <input placeholder="cities to automate" ng-model="customCities" />\
@@ -1699,6 +1944,32 @@
               <div style="margin-top: 10px">\
                  <input placeholder="actions to automate" ng-model="customAutomate" />\
                  <button ng-click="applyCustomAutomate()">apply</button>\
+              </div>\
+              <form id="atm-login-form" method="POST" action="{{ loginUrl() }}">\
+                <input ng-repeat="(name, value) in loginData" name="{{ name }}" type="hidden" value="{{ value }}" />\
+              </form>\
+            </div>\
+          </div>\
+          <div class="query control-box" ng-show="shown(\'query\')">\
+            <div ng-controller="EvalController">\
+              <h3>Query</h3>\
+              <div>\
+                <textarea query-input ng-model="query.str" />\
+              </div>\
+              <div class="actions">\
+                <button ng-click="eval(\'MULTI\')" ng-hide="!done()">multi eval</button>\
+                <button ng-click="eval(\'CURRENT\')" ng-hide="!done()">current eval</button>\
+                <span ng-show="!done()">evaluating ({{query.status.done}} / {{ query.status.total }})</span>\
+                <button ng-click="cancel()" ng-hide="done()">cancel</button>\
+                <input ng-model="query.name" />\
+                <button ng-click="save()">s</button>\
+                <button ng-click="delete()">rm</button>\
+              </div>\
+              <div style="margin-top: 10px; margin-bottom: 10px;" ng-show="query.status.error">\
+                <textarea ng-model="query.status.error" style="border: none; background: #ECD1D1;" />\
+              </div>\
+              <div>\
+                <textarea ng-model="query.result" />\
               </div>\
             </div>\
           </div>\
@@ -1734,6 +2005,32 @@
     }, 300);
   });
 
+  function queryInputDirective($timeout, $debounce) {
+    return {
+      restrict: 'A',
+      require: 'ngModel',
+      link: function(scope, element, attrs, ngModel) {
+
+        var saveQuery = $debounce(function(str) {
+          Storage.put("queryInput", str);
+        }, 2000);
+
+        ngModel.$parsers.push(function(val) {
+          saveQuery(val);
+          return val;
+        });
+
+        $timeout(function() {
+          var queryInput = Storage.get("queryInput");
+
+          if (queryInput) {
+            ngModel.$setViewValue(queryInput);
+            element.val(queryInput);
+          }
+        }, 1000);
+      }
+    }
+  }
   function attackCompositionDirective() {
     return {
       restrict: 'A',
@@ -1802,7 +2099,20 @@
     var automateJs = angular.module("automate.js", [ "ng" ]);
 
     automateJs
+      .value('$debounce', function(fn, wait) {
+        var timer;
+
+        return function() {
+          var context = this, args = arguments;
+          window.clearTimeout(timer);
+          timer = window.setTimeout(function() {
+            timer = null;
+            fn.apply(context, args);
+          }, wait);
+        };
+      })
       .directive('attackComposition', attackCompositionDirective)
+      .directive('queryInput', queryInputDirective)
       .config(['$routeProvider', function($routeProvider) {
         $routeProvider.when('/:city/:tab', {
           template: "<div></div>",

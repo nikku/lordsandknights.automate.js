@@ -112,3 +112,30 @@ input.ng-invalid {
   text-align: left;
   border-style: none;
 }
+
+.control-box.query {
+  width: 500px;
+  clear: both;
+}
+
+.control-box.query textarea {
+  display: block;
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+textarea.input {
+  min-height: 250px;
+}
+
+textarea.input {
+  min-height: 100px;
+}
+
+.control-box.query .actions {
+  margin: 10px 0 10px 0;
+}
+
+.control-box.query textarea:last-child {
+  margin-bottom: 0;
+}
